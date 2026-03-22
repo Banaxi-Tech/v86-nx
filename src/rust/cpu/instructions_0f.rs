@@ -326,6 +326,44 @@ pub unsafe fn instr16_0F01_7_reg(_r: i32) {
 pub unsafe fn instr32_0F01_7_reg(r: i32) { instr16_0F01_7_reg(r); }
 
 #[no_mangle]
+pub unsafe fn instr_0F01_D0() {
+    // xgetbv
+    if 0 != *cpl { // theoretically it's controlled by CR4.OSXSAVE, but Win10 calls it from CPL0 early
+        trigger_gp(0);
+        return;
+    }
+    let index = read_reg32(ECX);
+    if index == 0 {
+        let val = *xcr0;
+        write_reg32(EAX, val as i32);
+        write_reg32(EDX, (val >> 32) as i32);
+    } else {
+        trigger_gp(0);
+    }
+}
+
+#[no_mangle]
+pub unsafe fn instr_0F01_D1() {
+    // xsetbv
+    if 0 != *cpl {
+        trigger_gp(0);
+        return;
+    }
+    let index = read_reg32(ECX);
+    if index == 0 {
+        let val = (read_reg32(EAX) as u32 as u64) | ((read_reg32(EDX) as u32 as u64) << 32);
+        // Basic check: bit 0 must be 1
+        if val & 1 == 0 {
+            trigger_gp(0);
+            return;
+        }
+        *xcr0 = val;
+    } else {
+        trigger_gp(0);
+    }
+}
+
+#[no_mangle]
 pub unsafe fn instr16_0F01_7_mem(addr: i32) {
     // invlpg
     if 0 != *cpl {
@@ -3448,8 +3486,8 @@ pub unsafe fn instr_0FA2() {
         1 => {
             eax = 0x000306A9; // Ivy Bridge
             ebx = 1 << 16 | 8 << 8; // cpu count, clflush size
-            // sse3, ssse3, cx16, sse4.1, sse4.2, popcnt, rdrand
-            ecx = 1 << 0 | 1 << 9 | 1 << 13 | 1 << 19 | 1 << 20 | 1 << 23 | 1 << 30;
+            // sse3, ssse3, cx16, sse4.1, sse4.2, popcnt, xsave, rdrand
+            ecx = 1 << 0 | 1 << 9 | 1 << 13 | 1 << 19 | 1 << 20 | 1 << 23 | 1 << 26 | 1 << 30;
             let vme = 0 << 1;
             if config::VMWARE_HYPERVISOR_PORT {
                 ecx |= 1 << 31
@@ -3534,6 +3572,26 @@ pub unsafe fn instr_0FA2() {
         0x80000001 => {
             ecx = 1 << 0 | 1 << 8; // LAHF/SAHF, PREFETCHW
             edx = 1 << 20; // NX bit
+        },
+
+        0x0D => {
+            // Processor Extended State Enumeration
+            let sub = read_reg32(ECX);
+            if sub == 0 {
+                // Subleaf 0: Main Leaf
+                eax = 3; // x87 (bit 0) and SSE (bit 1)
+                ebx = 576; // size of area (FXSAVE size + some header)
+                ecx = 576; // max size
+                edx = 0;
+            } else if sub == 1 {
+                // Subleaf 1: XSAVEOPT
+                eax = 0; // No XSAVEOPT/XSAVEC/XGETBV1/XSAVES for now
+                ebx = 0;
+                ecx = 0;
+                edx = 0;
+            } else {
+                eax = 0; ebx = 0; ecx = 0; edx = 0;
+            }
         },
 
         0x80000008 => {
@@ -3795,25 +3853,27 @@ pub unsafe fn instr_0FAE_3_mem(addr: i32) {
 #[no_mangle]
 pub unsafe fn instr_0FAE_4_reg(_r: i32) { trigger_ud(); }
 #[no_mangle]
-pub unsafe fn instr_0FAE_4_mem(_addr: i32) {
+pub unsafe fn instr_0FAE_4_mem(addr: i32) {
     // xsave
-    undefined_instruction();
+    fxsave(addr);
 }
+#[no_mangle]
 pub unsafe fn instr_0FAE_5_reg(_r: i32) {
     // lfence
 }
-pub unsafe fn instr_0FAE_5_mem(_addr: i32) {
+#[no_mangle]
+pub unsafe fn instr_0FAE_5_mem(addr: i32) {
     // xrstor
-    undefined_instruction();
+    fxrstor(addr);
 }
 #[no_mangle]
 pub unsafe fn instr_0FAE_6_reg(_r: i32) {
     // mfence
 }
 #[no_mangle]
-pub unsafe fn instr_0FAE_6_mem(_addr: i32) {
+pub unsafe fn instr_0FAE_6_mem(addr: i32) {
     // xsaveopt
-    undefined_instruction();
+    fxsave(addr);
 }
 #[no_mangle]
 pub unsafe fn instr_0FAE_7_reg(_r: i32) {

@@ -60,8 +60,7 @@ const DUMP_GENERATED_WASM = false;
 const DUMP_UNCOMPILED_ASSEMBLY = false;
 
 /** @constructor */
-export function CPU(bus, wm, stop_idling)
-{
+export function CPU(bus, wm, stop_idling) {
     this.stop_idling = stop_idling;
     this.wm = wm;
     this.wasm_patch();
@@ -200,6 +199,7 @@ export function CPU(bus, wm, stop_idling)
     this.fpu_dp_selector[0] = 0;
 
     this.efer = view(Uint32Array, memory, 1232, 2);
+    this.xcr0 = view(Uint32Array, memory, 1240, 2);
 
     this.reg_xmm32s = view(Int32Array, memory, 832, 8 * 4);
 
@@ -226,8 +226,7 @@ export function CPU(bus, wm, stop_idling)
 
     this.set_tsc(0, 0);
 
-    if(DEBUG)
-    {
+    if (DEBUG) {
         this.seen_code = {};
         this.seen_code_uncompiled = {};
     }
@@ -235,21 +234,18 @@ export function CPU(bus, wm, stop_idling)
     //Object.seal(this);
 }
 
-CPU.prototype.mmap_read8 = function(addr)
-{
+CPU.prototype.mmap_read8 = function (addr) {
     const value = this.memory_map_read8[addr >>> MMAP_BLOCK_BITS](addr);
     dbg_assert(value >= 0 && value <= 0xFF);
     return value;
 };
 
-CPU.prototype.mmap_write8 = function(addr, value)
-{
+CPU.prototype.mmap_write8 = function (addr, value) {
     dbg_assert(value >= 0 && value <= 0xFF);
     this.memory_map_write8[addr >>> MMAP_BLOCK_BITS](addr, value);
 };
 
-CPU.prototype.mmap_write16 = function(addr, value)
-{
+CPU.prototype.mmap_write16 = function (addr, value) {
     var fn = this.memory_map_write8[addr >>> MMAP_BLOCK_BITS];
 
     dbg_assert(value >= 0 && value <= 0xFFFF);
@@ -257,22 +253,19 @@ CPU.prototype.mmap_write16 = function(addr, value)
     fn(addr + 1 | 0, value >> 8);
 };
 
-CPU.prototype.mmap_read32 = function(addr)
-{
+CPU.prototype.mmap_read32 = function (addr) {
     var aligned_addr = addr >>> MMAP_BLOCK_BITS;
 
     return this.memory_map_read32[aligned_addr](addr);
 };
 
-CPU.prototype.mmap_write32 = function(addr, value)
-{
+CPU.prototype.mmap_write32 = function (addr, value) {
     var aligned_addr = addr >>> MMAP_BLOCK_BITS;
 
     this.memory_map_write32[aligned_addr](addr, value);
 };
 
-CPU.prototype.mmap_write64 = function(addr, value0, value1)
-{
+CPU.prototype.mmap_write64 = function (addr, value0, value1) {
     var aligned_addr = addr >>> MMAP_BLOCK_BITS;
     // This should hold since writes across pages are split up
     dbg_assert(aligned_addr === (addr + 7) >>> MMAP_BLOCK_BITS);
@@ -282,8 +275,7 @@ CPU.prototype.mmap_write64 = function(addr, value0, value1)
     write_func32(addr + 4, value1);
 };
 
-CPU.prototype.mmap_write128 = function(addr, value0, value1, value2, value3)
-{
+CPU.prototype.mmap_write128 = function (addr, value0, value1, value2, value3) {
     var aligned_addr = addr >>> MMAP_BLOCK_BITS;
     // This should hold since writes across pages are split up
     dbg_assert(aligned_addr === (addr + 12) >>> MMAP_BLOCK_BITS);
@@ -299,12 +291,10 @@ CPU.prototype.mmap_write128 = function(addr, value0, value1, value2, value3)
  * @param {Array.<number>|Uint8Array} blob
  * @param {number} offset
  */
-CPU.prototype.write_blob = function(blob, offset)
-{
+CPU.prototype.write_blob = function (blob, offset) {
     dbg_assert(blob && blob.length >= 0);
 
-    if(blob.length)
-    {
+    if (blob.length) {
         dbg_assert(!this.in_mapped_range(offset));
         dbg_assert(!this.in_mapped_range(offset + blob.length - 1));
 
@@ -313,34 +303,28 @@ CPU.prototype.write_blob = function(blob, offset)
     }
 };
 
-CPU.prototype.read_blob = function(offset, length)
-{
-    if(length)
-    {
+CPU.prototype.read_blob = function (offset, length) {
+    if (length) {
         dbg_assert(!this.in_mapped_range(offset));
         dbg_assert(!this.in_mapped_range(offset + length - 1));
     }
     return this.mem8.subarray(offset, offset + length);
 };
 
-CPU.prototype.clear_opstats = function()
-{
+CPU.prototype.clear_opstats = function () {
     new Uint8Array(this.wasm_memory.buffer, 0x8000, 0x20000).fill(0);
     this.wm.exports["profiler_init"]();
 };
 
-CPU.prototype.create_jit_imports = function()
-{
+CPU.prototype.create_jit_imports = function () {
     // Set this.jit_imports as generated WASM modules will expect
 
     const jit_imports = Object.create(null);
 
     jit_imports["m"] = this.wm.exports["memory"];
 
-    for(const name of Object.keys(this.wm.exports))
-    {
-        if(name.startsWith("_") || name.startsWith("zstd") || name.endsWith("_js"))
-        {
+    for (const name of Object.keys(this.wm.exports)) {
+        if (name.startsWith("_") || name.startsWith("zstd") || name.endsWith("_js")) {
             continue;
         }
 
@@ -350,12 +334,10 @@ CPU.prototype.create_jit_imports = function()
     this.jit_imports = jit_imports;
 };
 
-CPU.prototype.wasm_patch = function()
-{
+CPU.prototype.wasm_patch = function () {
     const get_optional_import = name => this.wm.exports[name];
 
-    const get_import = name =>
-    {
+    const get_import = name => {
         const f = get_optional_import(name);
         console.assert(f, "Missing import: " + name);
         return f;
@@ -404,8 +386,7 @@ CPU.prototype.wasm_patch = function()
 
     this.apic_timer = get_import("apic_timer");
 
-    if(DEBUG)
-    {
+    if (DEBUG) {
         this.jit_force_generate_unsafe = get_optional_import("jit_force_generate_unsafe");
     }
 
@@ -434,10 +415,8 @@ CPU.prototype.wasm_patch = function()
     this.zstd_read_free = get_import("zstd_read_free");
 };
 
-CPU.prototype.jit_force_generate = function(addr)
-{
-    if(!this.jit_force_generate_unsafe)
-    {
+CPU.prototype.jit_force_generate = function (addr) {
+    if (!this.jit_force_generate_unsafe) {
         dbg_assert(false, "Not supported in this wasm build: jit_force_generate_unsafe");
         return;
     }
@@ -445,24 +424,20 @@ CPU.prototype.jit_force_generate = function(addr)
     this.jit_force_generate_unsafe(addr);
 };
 
-CPU.prototype.jit_clear_func = function(index)
-{
+CPU.prototype.jit_clear_func = function (index) {
     dbg_assert(index >= 0 && index < WASM_TABLE_SIZE);
     this.wm.wasm_table.set(index + WASM_TABLE_OFFSET, null);
 };
 
-CPU.prototype.jit_clear_all_funcs = function()
-{
+CPU.prototype.jit_clear_all_funcs = function () {
     const table = this.wm.wasm_table;
 
-    for(let i = 0; i < WASM_TABLE_SIZE; i++)
-    {
+    for (let i = 0; i < WASM_TABLE_SIZE; i++) {
         table.set(WASM_TABLE_OFFSET + i, null);
     }
 };
 
-CPU.prototype.get_state = function()
-{
+CPU.prototype.get_state = function () {
     var state = [];
 
     state[0] = this.memory_size[0];
@@ -517,19 +492,15 @@ CPU.prototype.get_state = function()
     state[54] = this.devices.uart0;
     state[55] = this.devices.fdc;
 
-    if(!this.devices.ide.secondary)
-    {
-        if(this.devices.ide.primary?.master.is_atapi)
-        {
+    if (!this.devices.ide.secondary) {
+        if (this.devices.ide.primary?.master.is_atapi) {
             state[56] = this.devices.ide.primary;
         }
-        else
-        {
+        else {
             state[57] = this.devices.ide.primary;
         }
     }
-    else
-    {
+    else {
         state[85] = this.devices.ide;
     }
 
@@ -574,12 +545,13 @@ CPU.prototype.get_state = function()
     state[88] = this.mxcsr;
     state[89] = this.efer[0];
     state[90] = this.efer[1];
+    state[91] = this.xcr0[0];
+    state[92] = this.xcr0[1];
 
     return state;
 };
 
-CPU.prototype.get_state_pic = function()
-{
+CPU.prototype.get_state_pic = function () {
     const pic_size = 13;
     const pic = new Uint8Array(this.wasm_memory.buffer, this.get_pic_addr_master(), pic_size);
     const pic_slave = new Uint8Array(this.wasm_memory.buffer, this.get_pic_addr_slave(), pic_size);
@@ -618,41 +590,34 @@ CPU.prototype.get_state_pic = function()
     return state;
 };
 
-CPU.prototype.get_state_apic = function()
-{
+CPU.prototype.get_state_apic = function () {
     const APIC_STRUCT_SIZE = 4 * 46; // keep in sync with apic.rs
     return new Uint8Array(this.wasm_memory.buffer, this.get_apic_addr(), APIC_STRUCT_SIZE);
 };
 
-CPU.prototype.get_state_ioapic = function()
-{
+CPU.prototype.get_state_ioapic = function () {
     const IOAPIC_STRUCT_SIZE = 4 * 52; // keep in sync with ioapic.rs
     return new Uint8Array(this.wasm_memory.buffer, this.get_ioapic_addr(), IOAPIC_STRUCT_SIZE);
 };
 
-CPU.prototype.set_state = function(state)
-{
+CPU.prototype.set_state = function (state) {
     this.memory_size[0] = state[0];
 
-    if(this.mem8.length !== this.memory_size[0])
-    {
+    if (this.mem8.length !== this.memory_size[0]) {
         console.warn("Note: Memory size mismatch. we=" + this.mem8.length + " state=" + this.memory_size[0]);
     }
 
-    if(state[1].length === 8)
-    {
+    if (state[1].length === 8) {
         // NOTE: support for old state images; delete this when bumping STATE_VERSION
         this.segment_is_null.set(state[1]);
         this.segment_access_bytes.fill(0x80 | (3 << 5) | 0x10 | 0x02);
         this.segment_access_bytes[REG_CS] = 0x80 | (3 << 5) | 0x10 | 0x08 | 0x02;
     }
-    else if(state[1].length === 16)
-    {
+    else if (state[1].length === 16) {
         this.segment_is_null.set(state[1].subarray(0, 8));
         this.segment_access_bytes.set(state[1].subarray(8, 16));
     }
-    else
-    {
+    else {
         dbg_assert("Unexpected cpu segment state length:" + state[1].length);
     }
     this.segment_offsets.set(state[2]);
@@ -706,17 +671,14 @@ CPU.prototype.set_state = function(state)
     this.devices.uart0 && this.devices.uart0.set_state(state[54]);
     this.devices.fdc && this.devices.fdc.set_state(state[55]);
 
-    if(state[56] || state[57])
-    {
+    if (state[56] || state[57]) {
         // ide device from older version of v86, only primary: state[56] contains cdrom, state[57] contains hard drive
 
         const ide_config = [[undefined, undefined], [undefined, undefined]];
-        if(state[56])
-        {
+        if (state[56]) {
             ide_config[0][0] = { is_cdrom: true, buffer: this.devices.cdrom.buffer };
         }
-        else
-        {
+        else {
             ide_config[0][0] = { is_cdrom: false, buffer: this.devices.ide.primary.master.buffer };
 
         }
@@ -724,8 +686,7 @@ CPU.prototype.set_state = function(state)
         this.devices.cdrom = state[56] ? this.devices.ide.primary.master : undefined;
         this.devices.ide.primary.set_state(state[56] || state[57]);
     }
-    else if(state[85])
-    {
+    else if (state[85]) {
         this.devices.ide.set_state(state[85]);
     }
 
@@ -761,11 +722,13 @@ CPU.prototype.set_state = function(state)
     this.fpu_dp_selector[0] = state[74];
     this.fpu_opcode[0] = state[75];
 
-    if(state[86] !== undefined) this.last_result = state[86];
-    if(state[87] !== undefined) this.fpu_status_word = state[87];
-    if(state[88] !== undefined) this.mxcsr = state[88];
-    if(state[89] !== undefined) this.efer[0] = state[89];
-    if(state[90] !== undefined) this.efer[1] = state[90];
+    if (state[86] !== undefined) this.last_result = state[86];
+    if (state[87] !== undefined) this.fpu_status_word = state[87];
+    if (state[88] !== undefined) this.mxcsr = state[88];
+    if (state[89] !== undefined) this.efer[0] = state[89];
+    if (state[90] !== undefined) this.efer[1] = state[90];
+    if (state[91] !== undefined) this.xcr0[0] = state[91];
+    if (state[92] !== undefined) this.xcr0[1] = state[92];
 
     const bitmap = new Bitmap(state[78].buffer);
     const packed_memory = state[77];
@@ -778,8 +741,7 @@ CPU.prototype.set_state = function(state)
     this.jit_clear_cache();
 };
 
-CPU.prototype.set_state_pic = function(state)
-{
+CPU.prototype.set_state_pic = function (state) {
     // Note: This could exists for compatibility with old state images
     // It should be deleted when the state version changes
 
@@ -816,13 +778,11 @@ CPU.prototype.set_state_pic = function(state)
     pic_slave[12] = state_slave[12]; // special_mask_mode (undefined in old state images)
 };
 
-CPU.prototype.set_state_apic = function(state)
-{
+CPU.prototype.set_state_apic = function (state) {
     const APIC_STRUCT_SIZE = 4 * 46; // keep in sync with apic.rs
     const IOAPIC_CONFIG_MASKED = 1 << 16;
 
-    if(state instanceof Array)
-    {
+    if (state instanceof Array) {
         // old js state image; delete this code path when the state version changes
         const apic = new Int32Array(this.wasm_memory.buffer, this.get_apic_addr(), APIC_STRUCT_SIZE >> 2);
         apic[0] = state[0]; // apic_id
@@ -849,8 +809,7 @@ CPU.prototype.set_state_apic = function(state)
         apic[44] = state[21]; // read_error
         apic[45] = state[22] || IOAPIC_CONFIG_MASKED; // lvt_thermal_sensor
     }
-    else
-    {
+    else {
         const apic = new Uint8Array(this.wasm_memory.buffer, this.get_apic_addr(), APIC_STRUCT_SIZE);
         dbg_assert(state instanceof Uint8Array);
         dbg_assert(state.length === apic.length); // later versions might need to handle state upgrades here
@@ -858,12 +817,10 @@ CPU.prototype.set_state_apic = function(state)
     }
 };
 
-CPU.prototype.set_state_ioapic = function(state)
-{
+CPU.prototype.set_state_ioapic = function (state) {
     const IOAPIC_STRUCT_SIZE = 4 * 52; // keep in sync with ioapic.rs
 
-    if(state instanceof Array)
-    {
+    if (state instanceof Array) {
         // old js state image; delete this code path when the state version changes
         dbg_assert(state[0].length === 24);
         dbg_assert(state[1].length === 24);
@@ -876,8 +833,7 @@ CPU.prototype.set_state_ioapic = function(state)
         ioapic[50] = state[4]; // irr
         ioapic[51] = state[5]; // irq_value
     }
-    else
-    {
+    else {
         const ioapic = new Uint8Array(this.wasm_memory.buffer, this.get_ioapic_addr(), IOAPIC_STRUCT_SIZE);
         dbg_assert(state instanceof Uint8Array);
         dbg_assert(state.length === ioapic.length); // later versions might need to handle state upgrades here
@@ -885,16 +841,13 @@ CPU.prototype.set_state_ioapic = function(state)
     }
 };
 
-CPU.prototype.pack_memory = function()
-{
+CPU.prototype.pack_memory = function () {
     dbg_assert((this.mem8.length & 0xFFF) === 0);
 
     const page_count = this.mem8.length >> 12;
     const nonzero_pages = [];
-    for(let page = 0; page < page_count; page++)
-    {
-        if(!this.is_memory_zeroed(page << 12, 0x1000))
-        {
+    for (let page = 0; page < page_count; page++) {
+        if (!this.is_memory_zeroed(page << 12, 0x1000)) {
             nonzero_pages.push(page);
         }
     }
@@ -902,8 +855,7 @@ CPU.prototype.pack_memory = function()
     const bitmap = new Bitmap(page_count);
     const packed_memory = new Uint8Array(nonzero_pages.length << 12);
 
-    for(const [i, page] of nonzero_pages.entries())
-    {
+    for (const [i, page] of nonzero_pages.entries()) {
         bitmap.set(page, 1);
 
         const offset = page << 12;
@@ -914,17 +866,14 @@ CPU.prototype.pack_memory = function()
     return { bitmap, packed_memory };
 };
 
-CPU.prototype.unpack_memory = function(bitmap, packed_memory)
-{
+CPU.prototype.unpack_memory = function (bitmap, packed_memory) {
     this.zero_memory(0, this.memory_size[0]);
 
     const page_count = this.memory_size[0] >> 12;
     let packed_page = 0;
 
-    for(let page = 0; page < page_count; page++)
-    {
-        if(bitmap.get(page))
-        {
+    for (let page = 0; page < page_count; page++) {
+        if (bitmap.get(page)) {
             const offset = packed_page << 12;
             const view = packed_memory.subarray(offset, offset + 0x1000);
             this.mem8.set(view, page << 12);
@@ -933,46 +882,37 @@ CPU.prototype.unpack_memory = function(bitmap, packed_memory)
     }
 };
 
-CPU.prototype.reboot_internal = function()
-{
+CPU.prototype.reboot_internal = function () {
     this.reset_cpu();
 
     this.fw_value = [];
 
-    if(this.devices.virtio_9p)
-    {
+    if (this.devices.virtio_9p) {
         this.devices.virtio_9p.reset();
     }
-    if(this.devices.virtio_console)
-    {
+    if (this.devices.virtio_console) {
         this.devices.virtio_console.reset();
     }
-    if(this.devices.virtio_net)
-    {
+    if (this.devices.virtio_net) {
         this.devices.virtio_net.reset();
     }
-    if(this.devices.ps2)
-    {
+    if (this.devices.ps2) {
         this.devices.ps2.reset();
     }
 
     this.load_bios();
 };
 
-CPU.prototype.reset_memory = function()
-{
+CPU.prototype.reset_memory = function () {
     this.mem8.fill(0);
 };
 
-CPU.prototype.create_memory = function(size, minimum_size)
-{
-    if(size < minimum_size)
-    {
+CPU.prototype.create_memory = function (size, minimum_size) {
+    if (size < minimum_size) {
         size = minimum_size;
         dbg_log("Rounding memory size up to " + size, LOG_CPU);
     }
-    else if((size | 0) < 0)
-    {
+    else if ((size | 0) < 0) {
         size = Math.pow(2, 31) - MMAP_BLOCK_SIZE;
         dbg_log("Rounding memory size down to " + size, LOG_CPU);
     }
@@ -994,15 +934,13 @@ CPU.prototype.create_memory = function(size, minimum_size)
 /**
  * @param {BusConnector} device_bus
  */
-CPU.prototype.init = function(settings, device_bus)
-{
+CPU.prototype.init = function (settings, device_bus) {
     this.create_memory(
         settings.memory_size || 64 * 1024 * 1024,
         settings.initrd ? 64 * 1024 * 1024 : 1024 * 1024,
     );
 
-    if(settings.disable_jit)
-    {
+    if (settings.disable_jit) {
         this.set_jit_config(0, 1);
     }
 
@@ -1020,18 +958,15 @@ CPU.prototype.init = function(settings, device_bus)
 
     this.load_bios();
 
-    if(settings.bzimage)
-    {
+    if (settings.bzimage) {
         const option_rom = load_kernel(this.mem8, settings.bzimage, settings.initrd, settings.cmdline || "");
 
-        if(option_rom)
-        {
+        if (option_rom) {
             this.option_roms.push(option_rom);
         }
     }
 
-    io.register_read(0xB3, this, function()
-    {
+    io.register_read(0xB3, this, function () {
         // seabios smm_relocate_and_restore
         dbg_log("port 0xB3 read");
         return 0;
@@ -1039,88 +974,71 @@ CPU.prototype.init = function(settings, device_bus)
 
     var a20_byte = 0;
 
-    io.register_read(0x92, this, function()
-    {
+    io.register_read(0x92, this, function () {
         return a20_byte;
     });
 
-    io.register_write(0x92, this, function(out_byte)
-    {
+    io.register_write(0x92, this, function (out_byte) {
         a20_byte = out_byte;
     });
 
-    io.register_read(0x511, this, function()
-    {
+    io.register_read(0x511, this, function () {
         // bios config port (used by seabios and kvm-unit-test)
-        if(this.fw_pointer < this.fw_value.length)
-        {
+        if (this.fw_pointer < this.fw_value.length) {
             return this.fw_value[this.fw_pointer++];
         }
-        else
-        {
+        else {
             dbg_assert(false, "config port: Read past value");
             return 0;
         }
     });
-    io.register_write(0x510, this, undefined, function(value)
-    {
+    io.register_write(0x510, this, undefined, function (value) {
         // https://wiki.osdev.org/QEMU_fw_cfg
         // https://github.com/qemu/qemu/blob/master/docs/specs/fw_cfg.txt
 
         dbg_log("bios config port, index=" + h(value));
 
-        function i32(x)
-        {
+        function i32(x) {
             return new Uint8Array(Int32Array.of(x).buffer);
         }
 
-        function to_be16(x)
-        {
+        function to_be16(x) {
             return x >> 8 | x << 8 & 0xFF00;
         }
 
-        function to_be32(x)
-        {
+        function to_be32(x) {
             return x << 24 | x << 8 & 0xFF0000 | x >> 8 & 0xFF00 | x >>> 24;
         }
 
         this.fw_pointer = 0;
 
-        if(value === FW_CFG_SIGNATURE)
-        {
+        if (value === FW_CFG_SIGNATURE) {
             // Pretend to be qemu (for seabios)
             this.fw_value = i32(FW_CFG_SIGNATURE_QEMU);
         }
-        else if(value === FW_CFG_ID)
-        {
+        else if (value === FW_CFG_ID) {
             this.fw_value = i32(0);
         }
-        else if(value === FW_CFG_RAM_SIZE)
-        {
+        else if (value === FW_CFG_RAM_SIZE) {
             this.fw_value = i32(this.memory_size[0]);
         }
-        else if(value === FW_CFG_NB_CPUS)
-        {
+        else if (value === FW_CFG_NB_CPUS) {
             this.fw_value = i32(1);
         }
-        else if(value === FW_CFG_MAX_CPUS)
-        {
+        else if (value === FW_CFG_MAX_CPUS) {
             this.fw_value = i32(1);
         }
-        else if(value === FW_CFG_NUMA)
-        {
+        else if (value === FW_CFG_NUMA) {
             this.fw_value = new Uint8Array(16);
         }
-        else if(value === FW_CFG_FILE_DIR)
-        {
+        else if (value === FW_CFG_FILE_DIR) {
             const buffer_size = 4 + 64 * this.option_roms.length;
             const buffer32 = new Int32Array(buffer_size);
             const buffer8 = new Uint8Array(buffer32.buffer);
 
             buffer32[0] = to_be32(this.option_roms.length);
 
-            for(let i = 0; i < this.option_roms.length; i++)
-            {
+            for (let i = 0; i < this.option_roms.length; i++) {
                 const { name, data } = this.option_roms[i];
                 const file_struct_ptr = 4 + 64 * i;
 
@@ -1130,47 +1048,40 @@ CPU.prototype.init = function(settings, device_bus)
 
                 dbg_assert(name.length < 64 - 8);
 
-                for(let j = 0; j < name.length; j++)
-                {
+                for (let j = 0; j < name.length; j++) {
                     buffer8[file_struct_ptr + 8 + j] = name.charCodeAt(j);
                 }
             }
 
             this.fw_value = buffer8;
         }
-        else if(value >= FW_CFG_CUSTOM_START && value < FW_CFG_FILE_START)
-        {
+        else if (value >= FW_CFG_CUSTOM_START && value < FW_CFG_FILE_START) {
             this.fw_value = i32(0);
         }
-        else if(value >= FW_CFG_FILE_START && value - FW_CFG_FILE_START < this.option_roms.length)
-        {
+        else if (value >= FW_CFG_FILE_START && value - FW_CFG_FILE_START < this.option_roms.length) {
             const i = value - FW_CFG_FILE_START;
             this.fw_value = this.option_roms[i].data;
         }
-        else
-        {
+        else {
             dbg_log("Warning: Unimplemented fw index: " + h(value));
             this.fw_value = i32(0);
         }
     });
 
-    if(DEBUG)
-    {
+    if (DEBUG) {
         // Avoid logging noisey ports
-        io.register_write(0x80, this, function(out_byte) {});
-        io.register_read(0x80, this, function() { return 0xFF; });
-        io.register_write(0xE9, this, function(out_byte) {});
+        io.register_write(0x80, this, function (out_byte) { });
+        io.register_read(0x80, this, function () { return 0xFF; });
+        io.register_write(0xE9, this, function (out_byte) { });
     }
 
     this.devices = {};
 
     // TODO: Make this more configurable
-    if(settings.load_devices)
-    {
+    if (settings.load_devices) {
         this.devices.pci = new PCI(this);
 
-        if(this.acpi_enabled[0])
-        {
+        if (this.acpi_enabled[0]) {
             this.devices.acpi = new ACPI(this);
         }
 
@@ -1185,24 +1096,20 @@ CPU.prototype.init = function(settings, device_bus)
 
         this.devices.uart0 = new UART(this, 0x3F8, device_bus);
 
-        if(settings.uart1)
-        {
+        if (settings.uart1) {
             this.devices.uart1 = new UART(this, 0x2F8, device_bus);
         }
-        if(settings.uart2)
-        {
+        if (settings.uart2) {
             this.devices.uart2 = new UART(this, 0x3E8, device_bus);
         }
-        if(settings.uart3)
-        {
+        if (settings.uart3) {
             this.devices.uart3 = new UART(this, 0x2E8, device_bus);
         }
 
         this.devices.fdc = new FloppyController(this, settings.fda, settings.fdb);
 
         const ide_config = [[undefined, undefined], [undefined, undefined]];
-        if(settings.hda)
-        {
+        if (settings.hda) {
             ide_config[0][0] = { buffer: settings.hda };
             ide_config[0][1] = { buffer: settings.hdb };
         }
@@ -1212,56 +1119,44 @@ CPU.prototype.init = function(settings, device_bus)
 
         this.devices.pit = new PIT(this, device_bus);
 
-        if(settings.net_device.type === "ne2k")
-        {
+        if (settings.net_device.type === "ne2k") {
             this.devices.net = new Ne2k(this, device_bus, settings.preserve_mac_from_state_image, settings.mac_address_translation);
         }
-        else if(settings.net_device.type === "virtio")
-        {
+        else if (settings.net_device.type === "virtio") {
             this.devices.virtio_net = new VirtioNet(this, device_bus, settings.preserve_mac_from_state_image, settings.net_device.mtu);
         }
 
-        if(settings.fs9p)
-        {
+        if (settings.fs9p) {
             this.devices.virtio_9p = new Virtio9p(settings.fs9p, this, device_bus);
         }
-        else if(settings.handle9p)
-        {
+        else if (settings.handle9p) {
             this.devices.virtio_9p = new Virtio9pHandler(settings.handle9p, this);
         }
-        else if(settings.proxy9p)
-        {
+        else if (settings.proxy9p) {
             this.devices.virtio_9p = new Virtio9pProxy(settings.proxy9p, this);
         }
-        if(settings.virtio_console)
-        {
+        if (settings.virtio_console) {
             this.devices.virtio_console = new VirtioConsole(this, device_bus);
         }
-        if(settings.virtio_balloon)
-        {
+        if (settings.virtio_balloon) {
             this.devices.virtio_balloon = new VirtioBalloon(this, device_bus);
         }
 
-        if(true)
-        {
+        if (true) {
             this.devices.sb16 = new SB16(this, device_bus);
         }
     }
 
-    if(settings.multiboot)
-    {
+    if (settings.multiboot) {
         dbg_log("loading multiboot", LOG_CPU);
         const option_rom = this.load_multiboot_option_rom(settings.multiboot, settings.initrd, settings.cmdline);
 
-        if(option_rom)
-        {
-            if(this.bios.main)
-            {
+        if (option_rom) {
+            if (this.bios.main) {
                 dbg_log("adding option rom for multiboot", LOG_CPU);
                 this.option_roms.push(option_rom);
             }
-            else
-            {
+            else {
                 dbg_log("loaded multiboot without bios", LOG_CPU);
                 this.reg32[REG_EAX] = this.io.port_read32(0xF4);
             }
@@ -1271,23 +1166,19 @@ CPU.prototype.init = function(settings, device_bus)
     this.debug_init();
 };
 
-CPU.prototype.load_multiboot = function (buffer)
-{
-    if(this.bios.main)
-    {
+CPU.prototype.load_multiboot = function (buffer) {
+    if (this.bios.main) {
         dbg_assert(false, "load_multiboot not supported with BIOS");
     }
 
     const option_rom = this.load_multiboot_option_rom(buffer, undefined, "");
-    if(option_rom)
-    {
+    if (option_rom) {
         dbg_log("loaded multiboot", LOG_CPU);
         this.reg32[REG_EAX] = this.io.port_read32(0xF4);
     }
 };
 
-CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
-{
+CPU.prototype.load_multiboot_option_rom = function (buffer, initrd, cmdline) {
     // https://www.gnu.org/software/grub/manual/multiboot/multiboot.html
 
     dbg_log("Trying multiboot from buffer of size " + buffer.byteLength, LOG_CPU);
@@ -1303,32 +1194,26 @@ CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
     const MULTIBOOT_INFO_MODS = 0x8;
     const MULTIBOOT_INFO_MEM_MAP = 0x40;
 
-    if(buffer.byteLength < MULTIBOOT_SEARCH_BYTES)
-    {
+    if (buffer.byteLength < MULTIBOOT_SEARCH_BYTES) {
         var buf32 = new Int32Array(MULTIBOOT_SEARCH_BYTES / 4);
         new Uint8Array(buf32.buffer).set(new Uint8Array(buffer));
     }
-    else
-    {
+    else {
         var buf32 = new Int32Array(buffer, 0, MULTIBOOT_SEARCH_BYTES / 4);
     }
 
-    for(var offset = 0; offset < MULTIBOOT_SEARCH_BYTES; offset += 4)
-    {
-        if(buf32[offset >> 2] === MULTIBOOT_HEADER_MAGIC)
-        {
+    for (var offset = 0; offset < MULTIBOOT_SEARCH_BYTES; offset += 4) {
+        if (buf32[offset >> 2] === MULTIBOOT_HEADER_MAGIC) {
             var flags = buf32[offset + 4 >> 2];
             var checksum = buf32[offset + 8 >> 2];
             var total = MULTIBOOT_HEADER_MAGIC + flags + checksum | 0;
 
-            if(total)
-            {
+            if (total) {
                 dbg_log("Multiboot checksum check failed", LOG_CPU);
                 continue;
             }
         }
-        else
-        {
+        else {
             continue;
         }
 
@@ -1340,15 +1225,14 @@ CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
         // do this in a io register hook, so it can happen after BIOS does its work
         var cpu = this;
 
-        this.io.register_read(0xF4, this, function () {return 0;} , function () { return 0;}, function () {
+        this.io.register_read(0xF4, this, function () { return 0; }, function () { return 0; }, function () {
             // actually do the load and return the multiboot magic
             const multiboot_info_addr = 0x7C00;
             let multiboot_data = multiboot_info_addr + MULTIBOOT_INFO_STRUCT_LEN;
             let info = 0;
 
             // command line
-            if(cmdline)
-            {
+            if (cmdline) {
                 info |= MULTIBOOT_INFO_CMDLINE;
 
                 cpu.write32(multiboot_info_addr + 16, multiboot_data);
@@ -1361,8 +1245,7 @@ CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
             }
 
             // memory map
-            if(flags & MULTIBOOT_HEADER_MEMORY_INFO)
-            {
+            if (flags & MULTIBOOT_HEADER_MEMORY_INFO) {
                 info |= MULTIBOOT_INFO_MEM_MAP;
                 let multiboot_mmap_count = 0;
                 cpu.write32(multiboot_info_addr + 44, 0);
@@ -1372,10 +1255,8 @@ CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
                 // does not exclude traditional bios exclusions
                 let start = 0;
                 let was_memory = false;
-                for(let addr = 0; addr < MMAP_MAX; addr += MMAP_BLOCK_SIZE)
-                {
-                    if(was_memory && cpu.memory_map_read8[addr >>> MMAP_BLOCK_BITS] !== undefined)
-                    {
+                for (let addr = 0; addr < MMAP_MAX; addr += MMAP_BLOCK_SIZE) {
+                    if (was_memory && cpu.memory_map_read8[addr >>> MMAP_BLOCK_BITS] !== undefined) {
                         cpu.write32(multiboot_data, 20); // size
                         cpu.write32(multiboot_data + 4, start); //addr (64-bit)
                         cpu.write32(multiboot_data + 8, 0);
@@ -1386,21 +1267,19 @@ CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
                         multiboot_mmap_count += 24;
                         was_memory = false;
                     }
-                    else if(!was_memory && cpu.memory_map_read8[addr >>> MMAP_BLOCK_BITS] === undefined)
-                    {
+                    else if (!was_memory && cpu.memory_map_read8[addr >>> MMAP_BLOCK_BITS] === undefined) {
                         start = addr;
                         was_memory = true;
                     }
                 }
-                dbg_assert (!was_memory, "top of 4GB shouldn't have memory");
+                dbg_assert(!was_memory, "top of 4GB shouldn't have memory");
                 cpu.write32(multiboot_info_addr + 44, multiboot_mmap_count);
             }
 
             let entrypoint = 0;
             let top_of_load = 0;
 
-            if(flags & MULTIBOOT_HEADER_ADDRESS)
-            {
+            if (flags & MULTIBOOT_HEADER_ADDRESS) {
                 dbg_log("Multiboot specifies its own address table", LOG_CPU);
 
                 var header_addr = buf32[offset + 12 >> 2];
@@ -1410,21 +1289,19 @@ CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
                 var entry_addr = buf32[offset + 28 >> 2];
 
                 dbg_log("header=" + h(header_addr, 8) +
-                        " load=" + h(load_addr, 8) +
-                        " load_end=" + h(load_end_addr, 8) +
-                        " bss_end=" + h(bss_end_addr, 8) +
-                        " entry=" + h(entry_addr, 8));
+                    " load=" + h(load_addr, 8) +
+                    " load_end=" + h(load_end_addr, 8) +
+                    " bss_end=" + h(bss_end_addr, 8) +
+                    " entry=" + h(entry_addr, 8));
 
                 dbg_assert(load_addr <= header_addr);
 
                 var file_start = offset - (header_addr - load_addr);
 
-                if(load_end_addr === 0)
-                {
+                if (load_end_addr === 0) {
                     var length = undefined;
                 }
-                else
-                {
+                else {
                     dbg_assert(load_end_addr >= load_addr);
                     var length = load_end_addr - load_addr;
                 }
@@ -1435,29 +1312,24 @@ CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
                 entrypoint = entry_addr | 0;
                 top_of_load = Math.max(load_end_addr, bss_end_addr);
             }
-            else if(buf32[0] === ELF_MAGIC)
-            {
+            else if (buf32[0] === ELF_MAGIC) {
                 dbg_log("Multiboot image is in elf format", LOG_CPU);
 
                 const elf = read_elf(buffer);
 
                 entrypoint = elf.header.entry;
 
-                for(const program of elf.program_headers)
-                {
-                    if(program.type === 0)
-                    {
+                for (const program of elf.program_headers) {
+                    if (program.type === 0) {
                         // null
                     }
-                    else if(program.type === 1)
-                    {
+                    else if (program.type === 1) {
                         // load
 
                         dbg_assert(program.filesz <= program.memsz);
 
-                        if(program.paddr + program.memsz < cpu.memory_size[0])
-                        {
-                            if(program.filesz) // offset might be outside of buffer if filesz is 0
+                        if (program.paddr + program.memsz < cpu.memory_size[0]) {
+                            if (program.filesz) // offset might be outside of buffer if filesz is 0
                             {
                                 const blob = new Uint8Array(buffer, program.offset, program.filesz);
                                 cpu.write_blob(blob, program.paddr);
@@ -1468,17 +1340,15 @@ CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
                             // Since multiboot specifies that paging is disabled, we load to the physical address;
                             // but the entry point is specified in virtual addresses so adjust the entrypoint if needed
 
-                            if(entrypoint === elf.header.entry && program.vaddr <= entrypoint && (program.vaddr + program.memsz) > entrypoint)
-                            {
+                            if (entrypoint === elf.header.entry && program.vaddr <= entrypoint && (program.vaddr + program.memsz) > entrypoint) {
                                 entrypoint = (entrypoint - program.vaddr) + program.paddr;
                             }
                         }
-                        else
-                        {
+                        else {
                             dbg_log("Warning: Skipped loading section, paddr=" + h(program.paddr) + " memsz=" + program.memsz, LOG_CPU);
                         }
                     }
-                    else if(
+                    else if (
                         program.type === 2 || // dynamic
                         program.type === 3 || // interp
                         program.type === 4 || // note
@@ -1492,27 +1362,23 @@ CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
                         dbg_log("skip load type " + program.type + " " + program.paddr + " to " + (program.paddr + program.memsz), LOG_CPU);
                         // ignore for now
                     }
-                    else
-                    {
+                    else {
                         dbg_assert(false, "unimplemented elf section type: " + h(program.type));
                     }
                 }
             }
-            else
-            {
+            else {
                 dbg_assert(false, "Not a bootable multiboot format");
             }
 
-            if(initrd)
-            {
+            if (initrd) {
                 info |= MULTIBOOT_INFO_MODS;
 
                 cpu.write32(multiboot_info_addr + 20, 1); // mods_count
                 cpu.write32(multiboot_info_addr + 24, multiboot_data); // mods_addr;
 
                 var ramdisk_address = top_of_load;
-                if((ramdisk_address & 4095) !== 0)
-                {
+                if ((ramdisk_address & 4095) !== 0) {
                     ramdisk_address = (ramdisk_address & ~4095) + 4096;
                 }
                 dbg_log("ramdisk address " + ramdisk_address);
@@ -1540,8 +1406,7 @@ CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
             cpu.is_32[0] = +true;
             cpu.stack_size_32[0] = +true;
 
-            for(var i = 0; i < 6; i++)
-            {
+            for (var i = 0; i < 6; i++) {
                 cpu.segment_is_null[i] = 0;
                 cpu.segment_offsets[i] = 0;
                 cpu.segment_limits[i] = 0xFFFFFFFF;
@@ -1561,27 +1426,22 @@ CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
 
         // only for kvm-unit-test
         this.io.register_write_consecutive(0xF4, this,
-            function(value)
-            {
+            function (value) {
                 console.log("Test exited with code " + h(value, 2));
                 throw "HALT";
             },
-            function() {},
-            function() {},
-            function() {});
+            function () { },
+            function () { },
+            function () { });
 
         // only for kvm-unit-test
-        for(let i = 0; i <= 0xF; i++)
-        {
-            function handle_write(value)
-            {
+        for (let i = 0; i <= 0xF; i++) {
+            function handle_write(value) {
                 dbg_log("kvm-unit-test: Set irq " + h(i) + " to " + h(value, 2));
-                if(value)
-                {
+                if (value) {
                     this.device_raise_irq(i);
                 }
-                else
-                {
+                else {
                     this.device_lower_irq(i);
                 }
             }
@@ -1611,8 +1471,7 @@ CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
 
         let rom_checksum = 0;
 
-        for(let i = 0; i < data8.length; i++)
-        {
+        for (let i = 0; i < data8.length; i++) {
             rom_checksum += data8[i];
         }
 
@@ -1626,8 +1485,7 @@ CPU.prototype.load_multiboot_option_rom = function(buffer, initrd, cmdline)
     dbg_log("Multiboot header not found", LOG_CPU);
 };
 
-CPU.prototype.fill_cmos = function(rtc, settings)
-{
+CPU.prototype.fill_cmos = function (rtc, settings) {
     var boot_order = settings.boot_order || BOOT_ORDER_CD_FIRST;
 
     // Used by seabios to determine the boot order
@@ -1638,7 +1496,7 @@ CPU.prototype.fill_cmos = function(rtc, settings)
     //   4: BEVPrio
     // bootflag 1, high nibble, lowest priority
     // Low nibble: Disable floppy signature check (1)
-    rtc.cmos_write(CMOS_BIOS_BOOTFLAG1 , 1 | boot_order >> 4 & 0xF0);
+    rtc.cmos_write(CMOS_BIOS_BOOTFLAG1, 1 | boot_order >> 4 & 0xF0);
 
     // bootflag 2, both nibbles, high and middle priority
     rtc.cmos_write(CMOS_BIOS_BOOTFLAG2, boot_order & 0xFF);
@@ -1648,8 +1506,7 @@ CPU.prototype.fill_cmos = function(rtc, settings)
     rtc.cmos_write(CMOS_MEM_BASE_HIGH, 640 >> 8);
 
     var memory_above_1m = 0; // in k
-    if(this.memory_size[0] >= 1024 * 1024)
-    {
+    if (this.memory_size[0] >= 1024 * 1024) {
         memory_above_1m = (this.memory_size[0] - 1024 * 1024) >> 10;
         memory_above_1m = Math.min(memory_above_1m, 0xFFFF);
     }
@@ -1660,8 +1517,7 @@ CPU.prototype.fill_cmos = function(rtc, settings)
     rtc.cmos_write(CMOS_MEM_EXTMEM_HIGH, memory_above_1m >> 8 & 0xFF);
 
     var memory_above_16m = 0; // in 64k blocks
-    if(this.memory_size[0] >= 16 * 1024 * 1024)
-    {
+    if (this.memory_size[0] >= 16 * 1024 * 1024) {
         memory_above_16m = (this.memory_size[0] - 16 * 1024 * 1024) >> 16;
         memory_above_16m = Math.min(memory_above_16m, 0xFFFF);
     }
@@ -1678,16 +1534,14 @@ CPU.prototype.fill_cmos = function(rtc, settings)
     rtc.cmos_write(CMOS_BIOS_SMP_COUNT, 0);
 
     // Used by bochs BIOS to skip the boot menu delay.
-    if(settings.fastboot) rtc.cmos_write(0x3f, 0x01);
+    if (settings.fastboot) rtc.cmos_write(0x3f, 0x01);
 };
 
-CPU.prototype.load_bios = function()
-{
+CPU.prototype.load_bios = function () {
     var bios = this.bios.main;
     var vga_bios = this.bios.vga;
 
-    if(!bios)
-    {
+    if (!bios) {
         dbg_log("Warning: No BIOS");
         return;
     }
@@ -1700,8 +1554,7 @@ CPU.prototype.load_bios = function()
 
     this.write_blob(data, start);
 
-    if(vga_bios)
-    {
+    if (vga_bios) {
         dbg_assert(vga_bios instanceof ArrayBuffer);
 
         // load vga bios
@@ -1712,44 +1565,36 @@ CPU.prototype.load_bios = function()
 
         // newer versions of seabios (needs to match pci rom address, see vga.js)
         this.io.mmap_register(0xFEB00000, 0x100000,
-            function(addr)
-            {
+            function (addr) {
                 addr = (addr - 0xFEB00000) | 0;
-                if(addr < vga_bios8.length)
-                {
+                if (addr < vga_bios8.length) {
                     return vga_bios8[addr];
                 }
-                else
-                {
+                else {
                     return 0;
                 }
             },
-            function(addr, value)
-            {
+            function (addr, value) {
                 dbg_assert(false, "Unexpected write to VGA rom");
             });
     }
-    else
-    {
+    else {
         dbg_log("Warning: No VGA BIOS");
     }
 
     // seabios expects the bios to be mapped to 0xFFF00000 also
     this.io.mmap_register(0xFFF00000, 0x100000,
-        function(addr)
-        {
+        function (addr) {
             addr &= 0xFFFFF;
             return this.mem8[addr];
         }.bind(this),
-        function(addr, value)
-        {
+        function (addr, value) {
             addr &= 0xFFFFF;
             this.mem8[addr] = value;
         }.bind(this));
 };
 
-CPU.prototype.codegen_finalize = function(wasm_table_index, start, state_flags, ptr, len)
-{
+CPU.prototype.codegen_finalize = function (wasm_table_index, start, state_flags, ptr, len) {
     ptr >>>= 0;
     len >>>= 0;
 
@@ -1757,20 +1602,16 @@ CPU.prototype.codegen_finalize = function(wasm_table_index, start, state_flags, 
 
     const code = new Uint8Array(this.wasm_memory.buffer, ptr, len);
 
-    if(DEBUG)
-    {
-        if(DUMP_GENERATED_WASM && !this.seen_code[start])
-        {
+    if (DEBUG) {
+        if (DUMP_GENERATED_WASM && !this.seen_code[start]) {
             this.dump_wasm(code);
 
             const DUMP_ASSEMBLY = false;
 
-            if(DUMP_ASSEMBLY)
-            {
+            if (DUMP_ASSEMBLY) {
                 let end = 0;
 
-                if((start ^ end) & ~0xFFF)
-                {
+                if ((start ^ end) & ~0xFFF) {
                     dbg_log("truncated disassembly start=" + h(start >>> 0) + " end=" + h(end >>> 0));
                     end = (start | 0xFFF) + 1; // until the end of the page
                 }
@@ -1779,8 +1620,7 @@ CPU.prototype.codegen_finalize = function(wasm_table_index, start, state_flags, 
 
                 const buffer = new Uint8Array(end - start);
 
-                for(let i = start; i < end; i++)
-                {
+                for (let i = start; i < end; i++) {
                     buffer[i - start] = this.read8(i);
                 }
 
@@ -1790,16 +1630,14 @@ CPU.prototype.codegen_finalize = function(wasm_table_index, start, state_flags, 
 
         this.seen_code[start] = (this.seen_code[start] || 0) + 1;
 
-        if(this.test_hook_did_generate_wasm)
-        {
+        if (this.test_hook_did_generate_wasm) {
             this.test_hook_did_generate_wasm(code);
         }
     }
 
     const SYNC_COMPILATION = false;
 
-    if(SYNC_COMPILATION)
-    {
+    if (SYNC_COMPILATION) {
         const module = new WebAssembly.Module(code);
         const result = new WebAssembly.Instance(module, { "e": this.jit_imports });
         const f = result.exports["f"];
@@ -1807,8 +1645,7 @@ CPU.prototype.codegen_finalize = function(wasm_table_index, start, state_flags, 
         this.wm.wasm_table.set(wasm_table_index + WASM_TABLE_OFFSET, f);
         this.codegen_finalize_finished(wasm_table_index, start, state_flags);
 
-        if(this.test_hook_did_finalize_wasm)
-        {
+        if (this.test_hook_did_finalize_wasm) {
             this.test_hook_did_finalize_wasm(code);
         }
 
@@ -1821,14 +1658,12 @@ CPU.prototype.codegen_finalize = function(wasm_table_index, start, state_flags, 
         this.wm.wasm_table.set(wasm_table_index + WASM_TABLE_OFFSET, f);
         this.codegen_finalize_finished(wasm_table_index, start, state_flags);
 
-        if(this.test_hook_did_finalize_wasm)
-        {
+        if (this.test_hook_did_finalize_wasm) {
             this.test_hook_did_finalize_wasm(code);
         }
     });
 
-    if(DEBUG)
-    {
+    if (DEBUG) {
         result.catch(e => {
             console.log(e);
             debugger;
@@ -1837,33 +1672,28 @@ CPU.prototype.codegen_finalize = function(wasm_table_index, start, state_flags, 
     }
 };
 
-CPU.prototype.log_uncompiled_code = function(start, end)
-{
-    if(!DEBUG || !DUMP_UNCOMPILED_ASSEMBLY)
-    {
+CPU.prototype.log_uncompiled_code = function (start, end) {
+    if (!DEBUG || !DUMP_UNCOMPILED_ASSEMBLY) {
         return;
     }
 
-    if((this.seen_code_uncompiled[start] || 0) < 100)
-    {
+    if ((this.seen_code_uncompiled[start] || 0) < 100) {
         this.seen_code_uncompiled[start] = (this.seen_code_uncompiled[start] || 0) + 1;
 
         end += 8; // final jump is not included
 
-        if((start ^ end) & ~0xFFF)
-        {
+        if ((start ^ end) & ~0xFFF) {
             dbg_log("truncated disassembly start=" + h(start >>> 0) + " end=" + h(end >>> 0));
             end = (start | 0xFFF) + 1; // until the end of the page
         }
 
-        if(end < start) end = start;
+        if (end < start) end = start;
 
         dbg_assert(end >= start);
 
         const buffer = new Uint8Array(end - start);
 
-        for(let i = start; i < end; i++)
-        {
+        for (let i = start; i < end; i++) {
             buffer[i - start] = this.read8(i);
         }
 
@@ -1872,10 +1702,8 @@ CPU.prototype.log_uncompiled_code = function(start, end)
     }
 };
 
-CPU.prototype.dump_function_code = function(block_ptr, count)
-{
-    if(!DEBUG || !DUMP_GENERATED_WASM)
-    {
+CPU.prototype.dump_function_code = function (block_ptr, count) {
+    if (!DEBUG || !DUMP_GENERATED_WASM) {
         return;
     }
 
@@ -1887,8 +1715,7 @@ CPU.prototype.dump_function_code = function(block_ptr, count)
 
     const is_32 = this.is_32[0];
 
-    for(let i = 0; i < count; i++)
-    {
+    for (let i = 0; i < count; i++) {
         const struct_start = (block_ptr >> 2) + i * SIZEOF_BASIC_BLOCK_IN_DWORDS;
         const start = mem32[struct_start + 0];
         const end = mem32[struct_start + 1];
@@ -1896,8 +1723,7 @@ CPU.prototype.dump_function_code = function(block_ptr, count)
 
         const buffer = new Uint8Array(end - start);
 
-        for(let i = start; i < end; i++)
-        {
+        for (let i = start; i < end; i++) {
             buffer[i - start] = this.read8(this.translate_address_system_read(i));
         }
 
@@ -1906,15 +1732,13 @@ CPU.prototype.dump_function_code = function(block_ptr, count)
     }
 };
 
-CPU.prototype.run_hardware_timers = function(acpi_enabled, now)
-{
+CPU.prototype.run_hardware_timers = function (acpi_enabled, now) {
     const pit_time = this.devices.pit.timer(now, false);
     const rtc_time = this.devices.rtc.timer(now, false);
 
     let acpi_time = 100;
     let apic_time = 100;
-    if(acpi_enabled)
-    {
+    if (acpi_enabled) {
         acpi_time = this.devices.acpi.timer(now);
         apic_time = this.apic_timer(now);
     }
@@ -1922,12 +1746,10 @@ CPU.prototype.run_hardware_timers = function(acpi_enabled, now)
     return Math.min(pit_time, rtc_time, acpi_time, apic_time);
 };
 
-CPU.prototype.debug_init = function()
-{
-    if(!DEBUG) return;
+CPU.prototype.debug_init = function () {
+    if (!DEBUG) return;
 
-    if(this.io)
-    {
+    if (this.io) {
         // write seabios debug output to console
         var seabios_debug = "";
 
@@ -1935,38 +1757,32 @@ CPU.prototype.debug_init = function()
         this.io.register_write(0x500, this, handle); // vgabios
     }
 
-    function handle(out_byte)
-    {
-        if(out_byte === 10)
-        {
+    function handle(out_byte) {
+        if (out_byte === 10) {
             dbg_log(seabios_debug, LOG_BIOS);
             seabios_debug = "";
         }
-        else
-        {
+        else {
             seabios_debug += String.fromCharCode(out_byte);
         }
     }
 };
 
-CPU.prototype.dump_stack = function(start, end)
-{
-    if(!DEBUG) return;
+CPU.prototype.dump_stack = function (start, end) {
+    if (!DEBUG) return;
 
     var esp = this.reg32[REG_ESP];
     dbg_log("========= STACK ==========");
 
-    if(end >= start || end === undefined)
-    {
+    if (end >= start || end === undefined) {
         start = 5;
         end = -5;
     }
 
-    for(var i = start; i > end; i--)
-    {
+    for (var i = start; i > end; i--) {
         var line = "    ";
 
-        if(!i) line = "=>  ";
+        if (!i) line = "=>  ";
 
         line += h(i, 2) + " | ";
 
@@ -1975,9 +1791,8 @@ CPU.prototype.dump_stack = function(start, end)
 };
 
 /** @param {string=} where */
-CPU.prototype.debug_get_state = function(where)
-{
-    if(!DEBUG) return;
+CPU.prototype.debug_get_state = function (where) {
+    if (!DEBUG) return;
 
     var mode = this.protected_mode[0] ? "prot" : "real";
     var vm = (this.flags[0] & FLAG_VM) ? 1 : 0;
@@ -2002,16 +1817,12 @@ CPU.prototype.debug_get_state = function(where)
     };
     var flag_string = "";
 
-    for(var i = 0; i < 16; i++)
-    {
-        if(flag_names[1 << i])
-        {
-            if(flags & 1 << i)
-            {
+    for (var i = 0; i < 16; i++) {
+        if (flag_names[1 << i]) {
+            if (flags & 1 << i) {
                 flag_string += flag_names[1 << i];
             }
-            else
-            {
+            else {
                 flag_string += " ";
             }
         }
@@ -2028,29 +1839,28 @@ CPU.prototype.debug_get_state = function(where)
 };
 
 /** @param {string=} where */
-CPU.prototype.dump_state = function(where)
-{
-    if(!DEBUG) return;
+CPU.prototype.dump_state = function (where) {
+    if (!DEBUG) return;
 
     dbg_log(this.debug_get_state(where), LOG_CPU);
 };
 
-CPU.prototype.get_regs_short = function()
-{
-    if(!DEBUG) return;
+CPU.prototype.get_regs_short = function () {
+    if (!DEBUG) return;
 
     var
-    r32 = { "eax": REG_EAX, "ecx": REG_ECX, "edx": REG_EDX, "ebx": REG_EBX,
-        "esp": REG_ESP, "ebp": REG_EBP, "esi": REG_ESI, "edi": REG_EDI },
+        r32 = {
+            "eax": REG_EAX, "ecx": REG_ECX, "edx": REG_EDX, "ebx": REG_EBX,
+            "esp": REG_ESP, "ebp": REG_EBP, "esi": REG_ESI, "edi": REG_EDI
+        },
         r32_names = ["eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi"],
         s = { "cs": REG_CS, "ds": REG_DS, "es": REG_ES, "fs": REG_FS, "gs": REG_GS, "ss": REG_SS },
         line1 = "",
         line2 = "";
 
-    for(var i = 0; i < 4; i++)
-    {
-        line1 += r32_names[i] + "="  + h(this.reg32[r32[r32_names[i]]] >>> 0, 8) + " ";
-        line2 += r32_names[i+4] + "="  + h(this.reg32[r32[r32_names[i+4]]] >>> 0, 8) + " ";
+    for (var i = 0; i < 4; i++) {
+        line1 += r32_names[i] + "=" + h(this.reg32[r32[r32_names[i]]] >>> 0, 8) + " ";
+        line2 += r32_names[i + 4] + "=" + h(this.reg32[r32[r32_names[i + 4]]] >>> 0, 8) + " ";
     }
 
     //line1 += " eip=" + h(this.get_real_eip() >>> 0, 8);
@@ -2062,9 +1872,8 @@ CPU.prototype.get_regs_short = function()
     return [line1, line2];
 };
 
-CPU.prototype.dump_regs_short = function()
-{
-    if(!DEBUG) return;
+CPU.prototype.dump_regs_short = function () {
+    if (!DEBUG) return;
 
     var lines = this.get_regs_short();
 
@@ -2072,9 +1881,8 @@ CPU.prototype.dump_regs_short = function()
     dbg_log(lines[1], LOG_CPU);
 };
 
-CPU.prototype.dump_gdt_ldt = function()
-{
-    if(!DEBUG) return;
+CPU.prototype.dump_gdt_ldt = function () {
+    if (!DEBUG) return;
 
     dbg_log("gdt: (len = " + h(this.gdtr_size[0]) + ")");
     dump_table(this.translate_address_system_read(this.gdtr_offset[0]), this.gdtr_size[0]);
@@ -2082,10 +1890,8 @@ CPU.prototype.dump_gdt_ldt = function()
     dbg_log("\nldt: (len = " + h(this.segment_limits[REG_LDTR]) + ")");
     dump_table(this.translate_address_system_read(this.segment_offsets[REG_LDTR]), this.segment_limits[REG_LDTR]);
 
-    function dump_table(addr, size)
-    {
-        for(var i = 0; i < size; i += 8, addr += 8)
-        {
+    function dump_table(addr, size) {
+        for (var i = 0; i < size; i += 8, addr += 8) {
             var base = this.read16(addr + 2) |
                 this.read8(addr + 4) << 16 |
                 this.read8(addr + 7) << 24,
@@ -2096,54 +1902,44 @@ CPU.prototype.dump_gdt_ldt = function()
                 flags_str = "",
                 dpl = access >> 5 & 3;
 
-            if(!(access & 128))
-            {
+            if (!(access & 128)) {
                 // present bit not set
                 //continue;
                 flags_str += "NP ";
             }
-            else
-            {
+            else {
                 flags_str += " P ";
             }
 
-            if(access & 16)
-            {
-                if(flags & 4)
-                {
+            if (access & 16) {
+                if (flags & 4) {
                     flags_str += "32b ";
                 }
-                else
-                {
+                else {
                     flags_str += "16b ";
                 }
 
-                if(access & 8)
-                {
+                if (access & 8) {
                     // executable
                     flags_str += "X ";
 
-                    if(access & 4)
-                    {
+                    if (access & 4) {
                         flags_str += "C ";
                     }
                 }
-                else
-                {
+                else {
                     // data
                     flags_str += "R ";
                 }
 
                 flags_str += "RW ";
             }
-            else
-            {
+            else {
                 // system
                 flags_str += "sys: " + h(access & 15);
             }
 
-            if(flags & 8)
-            {
+            if (flags & 8) {
                 limit = limit << 12 | 0xFFF;
             }
 
@@ -2154,12 +1950,10 @@ CPU.prototype.dump_gdt_ldt = function()
     }
 };
 
-CPU.prototype.dump_idt = function()
-{
-    if(!DEBUG) return;
+CPU.prototype.dump_idt = function () {
+    if (!DEBUG) return;
 
-    for(var i = 0; i < this.idtr_size[0]; i += 8)
-    {
+    for (var i = 0; i < this.idtr_size[0]; i += 8) {
         var addr = this.translate_address_system_read(this.idtr_offset[0] + i),
             base = this.read16(addr) | this.read16(addr + 6) << 16,
             selector = this.read16(addr + 2),
@@ -2167,30 +1961,24 @@ CPU.prototype.dump_idt = function()
             line,
             dpl = type >> 5 & 3;
 
-        if((type & 31) === 5)
-        {
+        if ((type & 31) === 5) {
             line = "task gate ";
         }
-        else if((type & 31) === 14)
-        {
+        else if ((type & 31) === 14) {
             line = "intr gate ";
         }
-        else if((type & 31) === 15)
-        {
+        else if ((type & 31) === 15) {
             line = "trap gate ";
         }
-        else
-        {
+        else {
             line = "invalid   ";
         }
 
 
-        if(type & 128)
-        {
+        if (type & 128) {
             line += " P";
         }
-        else
-        {
+        else {
             // present bit not set
             //continue;
             line += "NP";
@@ -2202,40 +1990,33 @@ CPU.prototype.dump_idt = function()
     }
 };
 
-CPU.prototype.dump_page_structures = function()
-{
+CPU.prototype.dump_page_structures = function () {
     var pae = !!(this.cr[4] & CR4_PAE);
-    if(pae)
-    {
+    if (pae) {
         dbg_log("PAE enabled");
 
-        for(var i = 0; i < 4; i++) {
+        for (var i = 0; i < 4; i++) {
             var addr = this.cr[3] + 8 * i;
             var dword = this.read32s(addr);
-            if(dword & 1)
-            {
+            if (dword & 1) {
                 this.dump_page_directory(dword & 0xFFFFF000, true, i << 30);
             }
         }
     }
-    else
-    {
+    else {
         dbg_log("PAE disabled");
         this.dump_page_directory(this.cr[3], false, 0);
     }
 };
 
 // NOTE: PAE entries are 64-bits, we ignore the high half here.
-CPU.prototype.dump_page_directory = function(pd_addr, pae, start)
-{
-    if(!DEBUG) return;
+CPU.prototype.dump_page_directory = function (pd_addr, pae, start) {
+    if (!DEBUG) return;
 
-    function load_page_entry(dword_entry, pae, is_directory)
-    {
-        if(!DEBUG) return;
+    function load_page_entry(dword_entry, pae, is_directory) {
+        if (!DEBUG) return;
 
-        if(!(dword_entry & 1))
-        {
+        if (!(dword_entry & 1)) {
             // present bit not set
             return false;
         }
@@ -2243,12 +2024,10 @@ CPU.prototype.dump_page_directory = function(pd_addr, pae, start)
         var size = (dword_entry & 128) === 128,
             address;
 
-        if(size && !is_directory)
-        {
+        if (size && !is_directory) {
             address = dword_entry & (pae ? 0xFFE00000 : 0xFFC00000);
         }
-        else
-        {
+        else {
             address = dword_entry & 0xFFFFF000;
         }
 
@@ -2257,10 +2036,10 @@ CPU.prototype.dump_page_directory = function(pd_addr, pae, start)
             global: (dword_entry & 256) === 256,
             accessed: (dword_entry & 0x20) === 0x20,
             dirty: (dword_entry & 0x40) === 0x40,
-            cache_disable : (dword_entry & 16) === 16,
-            user : (dword_entry & 4) === 4,
-            read_write : (dword_entry & 2) === 2,
-            address : address >>> 0
+            cache_disable: (dword_entry & 16) === 16,
+            user: (dword_entry & 4) === 4,
+            read_write: (dword_entry & 2) === 2,
+            address: address >>> 0
         };
     }
 
@@ -2268,14 +2047,12 @@ CPU.prototype.dump_page_directory = function(pd_addr, pae, start)
     var entry_size = pae ? 8 : 4;
     var pd_shift = pae ? 21 : 22;
 
-    for(var i = 0; i < n; i++)
-    {
+    for (var i = 0; i < n; i++) {
         var addr = pd_addr + i * entry_size,
             dword = this.read32s(addr),
             entry = load_page_entry(dword, pae, true);
 
-        if(!entry)
-        {
+        if (!entry) {
             continue;
         }
 
@@ -2287,26 +2064,22 @@ CPU.prototype.dump_page_directory = function(pd_addr, pae, start)
         flags += entry.user ? "U " : "  ";
         flags += entry.read_write ? "Rw " : "   ";
 
-        if(entry.size)
-        {
+        if (entry.size) {
             dbg_log("=== " + h(start + (i << pd_shift) >>> 0, 8) + " -> " +
                 h(entry.address >>> 0, 8) + " | " + flags);
             continue;
         }
-        else
-        {
+        else {
             dbg_log("=== " + h(start + (i << pd_shift) >>> 0, 8) + " | " + flags);
         }
 
-        for(var j = 0; j < n; j++)
-        {
+        for (var j = 0; j < n; j++) {
             var sub_addr = entry.address + j * entry_size;
             dword = this.read32s(sub_addr);
 
             var subentry = load_page_entry(dword, pae, false);
 
-            if(subentry)
-            {
+            if (subentry) {
                 flags = "";
 
                 flags += subentry.cache_disable ? "Cd " : "   ";
@@ -2323,17 +2096,14 @@ CPU.prototype.dump_page_directory = function(pd_addr, pae, start)
     }
 };
 
-CPU.prototype.get_memory_dump = function(start, count)
-{
-    if(!DEBUG) return;
+CPU.prototype.get_memory_dump = function (start, count) {
+    if (!DEBUG) return;
 
-    if(start === undefined)
-    {
+    if (start === undefined) {
         start = 0;
         count = this.memory_size[0];
     }
-    else if(count === undefined)
-    {
+    else if (count === undefined) {
         count = start;
         start = 0;
     }
@@ -2341,27 +2111,23 @@ CPU.prototype.get_memory_dump = function(start, count)
     return this.mem8.slice(start, start + count).buffer;
 };
 
-CPU.prototype.memory_hex_dump = function(addr, length)
-{
-    if(!DEBUG) return;
+CPU.prototype.memory_hex_dump = function (addr, length) {
+    if (!DEBUG) return;
 
     length = length || 4 * 0x10;
     var line, byt;
 
-    for(var i = 0; i < length >> 4; i++)
-    {
+    for (var i = 0; i < length >> 4; i++) {
         line = h(addr + (i << 4), 5) + "   ";
 
-        for(var j = 0; j < 0x10; j++)
-        {
+        for (var j = 0; j < 0x10; j++) {
             byt = this.read8(addr + (i << 4) + j);
             line += h(byt, 2) + " ";
         }
 
         line += "  ";
 
-        for(j = 0; j < 0x10; j++)
-        {
+        for (j = 0; j < 0x10; j++) {
             byt = this.read8(addr + (i << 4) + j);
             line += (byt < 33 || byt > 126) ? "." : String.fromCharCode(byt);
         }
@@ -2370,21 +2136,18 @@ CPU.prototype.memory_hex_dump = function(addr, length)
     }
 };
 
-CPU.prototype.used_memory_dump = function()
-{
-    if(!DEBUG) return;
+CPU.prototype.used_memory_dump = function () {
+    if (!DEBUG) return;
 
     var width = 0x80,
         height = 0x10,
         block_size = this.memory_size[0] / width / height | 0,
         row;
 
-    for(var i = 0; i < height; i++)
-    {
+    for (var i = 0; i < height; i++) {
         row = h(i * width * block_size, 8) + " | ";
 
-        for(var j = 0; j < width; j++)
-        {
+        for (var j = 0; j < width; j++) {
             var used = this.mem32s[(i * width + j) * block_size] > 0;
 
             row += used ? "X" : " ";
@@ -2394,8 +2157,7 @@ CPU.prototype.used_memory_dump = function()
     }
 };
 
-CPU.prototype.debug_interrupt = function(interrupt_nr)
-{
+CPU.prototype.debug_interrupt = function (interrupt_nr) {
     //if(interrupt_nr === 0x20)
     //{
     //    //var vxd_device = this.safe_read16(this.instruction_pointer + 2);
@@ -2453,22 +2215,18 @@ CPU.prototype.debug_interrupt = function(interrupt_nr)
     //}
 };
 
-CPU.prototype.debug_dump_code = function(is_32, buffer, start)
-{
-    if(!DEBUG) return;
+CPU.prototype.debug_dump_code = function (is_32, buffer, start) {
+    if (!DEBUG) return;
 
-    if(!this.capstone_decoder)
-    {
+    if (!this.capstone_decoder) {
         let cs = window.cs;
 
         /* global require */
-        if(typeof require === "function")
-        {
+        if (typeof require === "function") {
             cs = require("./capstone-x86.min.js");
         }
 
-        if(cs === undefined)
-        {
+        if (cs === undefined) {
             dbg_log("Warning: Missing capstone library, disassembly not available");
             return;
         }
@@ -2479,13 +2237,11 @@ CPU.prototype.debug_dump_code = function(is_32, buffer, start)
         ];
     }
 
-    if(buffer instanceof Array)
-    {
+    if (buffer instanceof Array) {
         buffer = new Uint8Array(buffer);
     }
 
-    try
-    {
+    try {
         const instructions = this.capstone_decoder[+is_32].disasm(buffer, start);
 
         instructions.forEach(function (instr) {
@@ -2495,30 +2251,24 @@ CPU.prototype.debug_dump_code = function(is_32, buffer, start)
         });
         dbg_log("");
     }
-    catch(e)
-    {
+    catch (e) {
         dbg_log("Could not disassemble: " + Array.from(buffer).map(x => h(x, 2)).join(" "));
     }
 };
 
-CPU.prototype.dump_wasm = function(buffer)
-{
-    if(!DEBUG) return;
+CPU.prototype.dump_wasm = function (buffer) {
+    if (!DEBUG) return;
 
     /* global require */
-    if(this.wabt === undefined)
-    {
-        if(typeof require === "function")
-        {
+    if (this.wabt === undefined) {
+        if (typeof require === "function") {
             this.wabt = require("./libwabt.cjs");
         }
-        else
-        {
+        else {
             this.wabt = new window.WabtModule;
         }
 
-        if(this.wabt === undefined)
-        {
+        if (this.wabt === undefined) {
             dbg_log("Warning: Missing libwabt, wasm dump not available");
             return;
         }
@@ -2528,23 +2278,19 @@ CPU.prototype.dump_wasm = function(buffer)
     // the whole underlying buffer
     buffer = buffer.slice();
 
-    try
-    {
+    try {
         var module = this.wabt.readWasm(buffer, { readDebugNames: false });
         module.generateNames();
         module.applyNames();
         const result = module.toText({ foldExprs: true, inlineExport: true });
         dbg_log(result);
     }
-    catch(e)
-    {
+    catch (e) {
         dump_file(buffer, "failed.wasm");
         console.log(e.toString());
     }
-    finally
-    {
-        if(module)
-        {
+    finally {
+        if (module) {
             module.destroy();
         }
     }

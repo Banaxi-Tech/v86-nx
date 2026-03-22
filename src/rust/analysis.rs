@@ -97,27 +97,5 @@ pub fn instr_F3_analyze(cpu: &mut CpuContext, analysis: &mut Analysis) {
     cpu.prefixes |= PREFIX_F3;
     analyze_step_handle_prefix(cpu, analysis)
 }
-pub fn instr_0F38_analyze(cpu: &mut CpuContext, _analysis: &mut Analysis) {
-    let _op = cpu.read_imm8();
-    let modrm_byte = cpu.read_imm8();
-    if modrm_byte < 0xC0 {
-        modrm::decode(cpu, modrm_byte);
-    }
-}
-pub fn instr_0F39_analyze(cpu: &mut CpuContext, _analysis: &mut Analysis) {
-    let _op = cpu.read_imm8();
-    let modrm_byte = cpu.read_imm8();
-    if modrm_byte < 0xC0 {
-        modrm::decode(cpu, modrm_byte);
-    }
-    cpu.read_imm8();
-}
-pub fn instr_0F3A_analyze(cpu: &mut CpuContext, _analysis: &mut Analysis) {
-    let _op = cpu.read_imm8();
-    let modrm_byte = cpu.read_imm8();
-    if modrm_byte < 0xC0 {
-        modrm::decode(cpu, modrm_byte);
-    }
-    cpu.read_imm8();
-}
+
 pub fn modrm_analyze(ctx: &mut CpuContext, modrm_byte: u8) { modrm::skip(ctx, modrm_byte); }

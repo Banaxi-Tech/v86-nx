@@ -7881,7 +7881,7 @@ pub fn instr_660FFE_reg_jit(ctx: &mut JitContext, r1: u32, r2: u32) {
 }
 
 #[no_mangle]
-pub fn instr_0F38_jit(ctx: &mut JitContext, _instr_flags: &mut u32) {
+pub fn instr_0F38_jit(ctx: &mut JitContext) {
     let op = ctx.cpu.read_imm8();
     let modrm_byte = ctx.cpu.read_imm8();
     let packed = op as u32 | ((modrm_byte as u32) << 8);
@@ -7899,7 +7899,7 @@ pub fn instr_0F38_jit(ctx: &mut JitContext, _instr_flags: &mut u32) {
 }
 
 #[no_mangle]
-pub fn instr_0F39_jit(ctx: &mut JitContext, _instr_flags: &mut u32) {
+pub fn instr_0F39_jit(ctx: &mut JitContext) {
     let op = ctx.cpu.read_imm8();
     let modrm_byte = ctx.cpu.read_imm8();
     let imm8 = ctx.cpu.read_imm8();
@@ -7918,7 +7918,7 @@ pub fn instr_0F39_jit(ctx: &mut JitContext, _instr_flags: &mut u32) {
 }
 
 #[no_mangle]
-pub fn instr_0F3A_jit(ctx: &mut JitContext, _instr_flags: &mut u32) {
+pub fn instr_0F3A_jit(ctx: &mut JitContext) {
     let op = ctx.cpu.read_imm8();
     let modrm_byte = ctx.cpu.read_imm8();
     let imm8 = ctx.cpu.read_imm8();

@@ -5,7 +5,6 @@ unsafe fn undefined_instruction() {
     trigger_ud()
 }
 unsafe fn unimplemented_sse() {
-    dbg_log!("Unimplemented SSE instruction hit");
     dbg_assert!(false, "Unimplemented SSE instruction");
     trigger_ud()
 }
@@ -310,58 +309,9 @@ pub unsafe fn instr16_0F01_6_mem(addr: i32) {
 pub unsafe fn instr32_0F01_6_mem(addr: i32) { instr16_0F01_6_mem(addr) }
 
 #[no_mangle]
-pub unsafe fn instr16_0F01_7_reg(_r: i32) {
-    // rdtscp
-    if 0 == *cpl || 0 == *cr.offset(4) & CR4_TSD {
-        let tsc = read_tsc();
-        write_reg32(EAX, tsc as i32);
-        write_reg32(EDX, (tsc >> 32) as i32);
-        write_reg32(ECX, 0); // TSC_AUX
-    }
-    else {
-        trigger_gp(0);
-    };
-}
+pub unsafe fn instr16_0F01_7_reg(_r: i32) { trigger_ud(); }
 #[no_mangle]
-pub unsafe fn instr32_0F01_7_reg(r: i32) { instr16_0F01_7_reg(r); }
-
-#[no_mangle]
-pub unsafe fn instr_0F01_D0() {
-    // xgetbv
-    if 0 != *cpl { // theoretically it's controlled by CR4.OSXSAVE, but Win10 calls it from CPL0 early
-        trigger_gp(0);
-        return;
-    }
-    let index = read_reg32(ECX);
-    if index == 0 {
-        let val = *xcr0;
-        write_reg32(EAX, val as i32);
-        write_reg32(EDX, (val >> 32) as i32);
-    } else {
-        trigger_gp(0);
-    }
-}
-
-#[no_mangle]
-pub unsafe fn instr_0F01_D1() {
-    // xsetbv
-    if 0 != *cpl {
-        trigger_gp(0);
-        return;
-    }
-    let index = read_reg32(ECX);
-    if index == 0 {
-        let val = (read_reg32(EAX) as u32 as u64) | ((read_reg32(EDX) as u32 as u64) << 32);
-        // Basic check: bit 0 must be 1
-        if val & 1 == 0 {
-            trigger_gp(0);
-            return;
-        }
-        *xcr0 = val;
-    } else {
-        trigger_gp(0);
-    }
-}
+pub unsafe fn instr32_0F01_7_reg(_r: i32) { trigger_ud(); }
 
 #[no_mangle]
 pub unsafe fn instr16_0F01_7_mem(addr: i32) {
@@ -1286,11 +1236,9 @@ pub unsafe fn instr_0F30() {
         IA32_MCU_OPT_CTRL => {},   // linux 5.19
         MSR_AMD64_LS_CFG => {},    // linux 5.19
         MSR_AMD64_DE_CFG => {},    // linux 6.1
-        0x40000000..=0x400000FF => {
-            // Hyper-V MSRs
-        },
         _ => {
-            dbg_log!("Unknown msr write: {:x} data={:x}:{:x}", index, high, low);
+            dbg_log!("Unknown msr: {:x}", index);
+            dbg_assert!(false);
         },
     }
 }
@@ -1372,19 +1320,9 @@ pub unsafe fn instr_0F32() {
         IA32_MCU_OPT_CTRL => {},   // linux 5.19
         MSR_AMD64_LS_CFG => {},    // linux 5.19
         MSR_AMD64_DE_CFG => {},    // linux 6.1
-        0x40000020 => {
-            // HV_X64_MSR_TIME_REF_COUNT
-            let tsc = read_tsc();
-            // HV timer is in 100ns units. TSC is usually much faster.
-            // For now, let's just use a scaled TSC or return something that advances.
-            low = (tsc / 100) as i32;
-            high = (tsc / 100 >> 32) as i32;
-        },
-        0x40000000..=0x400000FF => {
-            // Hyper-V MSRs
-        },
         _ => {
-            dbg_log!("Unknown msr read: {:x}", index);
+            dbg_log!("Unknown msr: {:x}", index);
+            dbg_assert!(false);
         },
     }
 
@@ -1505,18 +1443,7 @@ unsafe fn instr_0F38_logic(packed: u32, is_memory: bool, addr: i32) {
             write_xmm_reg128(r, result);
         },
         0x10 => { // PBLENDVB
-            // Mandatory prefix 66, but we stub it anyway
-            let dest = read_xmm128s(r);
-            let mask = read_xmm128s(0); // Uses XMM0 as mask
-            let mut res = [0u8; 16];
-            for i in 0..16 {
-                if mask.u8[i] & 0x80 != 0 {
-                    res[i] = source128.u8[i];
-                } else {
-                    res[i] = dest.u8[i];
-                }
-            }
-            write_xmm_reg128(r, reg128 { u8: res });
+            write_xmm_reg128(r, source128);
         },
         0x40 => { // PMULLD
             write_xmm_reg128(r, source128);
@@ -1621,12 +1548,6 @@ unsafe fn instr_0F3A_logic(packed: u32, is_memory: bool, addr: i32) {
             write_xmm_reg128(r, result);
         },
         0x14 | 0x15 | 0x16 | 0x17 => { // PEXTRB, PEXTRW, PEXTRD, PEXTRQ
-            write_xmm_reg128(r, source128);
-        },
-        0x20 | 0x21 | 0x22 => { // PINSRB, PINSRD, PINSRQ
-            write_xmm_reg128(r, source128);
-        },
-        0x40 | 0x41 => { // DPPS, DPPD
             write_xmm_reg128(r, source128);
         },
         _ => {
@@ -3486,8 +3407,8 @@ pub unsafe fn instr_0FA2() {
         1 => {
             eax = 0x000306A9; // Ivy Bridge
             ebx = 1 << 16 | 8 << 8; // cpu count, clflush size
-            // sse3, ssse3, cx16, sse4.1, sse4.2, popcnt, xsave, rdrand
-            ecx = 1 << 0 | 1 << 9 | 1 << 13 | 1 << 19 | 1 << 20 | 1 << 23 | 1 << 26 | 1 << 30;
+            // sse3, ssse3, cx16, sse4.1, popcnt, rdrand
+            ecx = 1 << 0 | 1 << 9 | 1 << 13 | 1 << 19 | 1 << 23 | 1 << 30;
             let vme = 0 << 1;
             if config::VMWARE_HYPERVISOR_PORT {
                 ecx |= 1 << 31
@@ -3548,19 +3469,10 @@ pub unsafe fn instr_0FA2() {
         7 => {
             if read_reg32(ECX) == 0 {
                 eax = 0; // maximum supported sub-level
-                // ebx: smep (7), enhanced rep (9), smap (20)
-                ebx = 1 << 7 | 1 << 9 | 1 << 20;
+                ebx = 1 << 9; // enhanced REP MOVSB/STOSB
                 ecx = 0;
                 edx = 0;
             }
-        },
-
-        6 => {
-            // Thermal and Power Management
-            eax = 0x77; // ARAT, etc
-            ebx = 0x2;
-            ecx = 0x9;
-            edx = 0;
         },
 
         0x80000000 => {
@@ -3570,28 +3482,8 @@ pub unsafe fn instr_0FA2() {
         },
 
         0x80000001 => {
-            ecx = 1 << 0 | 1 << 8; // LAHF/SAHF, PREFETCHW
+            ecx = 1 << 0; // LAHF/SAHF
             edx = 1 << 20; // NX bit
-        },
-
-        0x0D => {
-            // Processor Extended State Enumeration
-            let sub = read_reg32(ECX);
-            if sub == 0 {
-                // Subleaf 0: Main Leaf
-                eax = 3; // x87 (bit 0) and SSE (bit 1)
-                ebx = 576; // size of area (FXSAVE size + some header)
-                ecx = 576; // max size
-                edx = 0;
-            } else if sub == 1 {
-                // Subleaf 1: XSAVEOPT
-                eax = 0; // No XSAVEOPT/XSAVEC/XGETBV1/XSAVES for now
-                ebx = 0;
-                ecx = 0;
-                edx = 0;
-            } else {
-                eax = 0; ebx = 0; ecx = 0; edx = 0;
-            }
         },
 
         0x80000008 => {
@@ -3605,59 +3497,13 @@ pub unsafe fn instr_0FA2() {
 
         0x40000000 => {
             // hypervisor maximum leaf and signature
-            eax = 0x40000004; // max leaf
-            ebx = 0x7263694D; // Micr
-            ecx = 0x666F736F; // osof
-            edx = 0x76482074; // t Hv
+            eax = 0x40000001; // max leaf
+            ebx = 0x6372654D; // "Merc"
+            ecx = 0x56797275; // "uryV"
+            edx = 0x20204D4D; // "MM  "
         },
-
         0x40000001 => {
-            // hypervisor interface signature
-            eax = 0x31237648; // Hv#1
-        },
-
-        0x40000002 => {
-            // System identity
-            eax = 0x00003839; // Build number
-            ebx = 0x000A0000; // Version
-            ecx = 0;
-            edx = 0;
-        },
-
-        0x40000003 => {
-            // Hyper-V Features
-            eax = 0x000000F2; // Basic enlightened features
-            ebx = 0;
-            ecx = 0;
-            edx = 0;
-        },
-
-        0x40000004 => {
-            // Recommendations
-            eax = 0x00000002; // Hypercall recomendation
-            ebx = 0;
-            ecx = 0;
-            edx = 0;
-        },
-
-        0x40000080 => {
-            // Nested features
-            eax = 0x40000082; // Max nested leaf
-            ebx = 0;
-            ecx = 0;
-            edx = 0;
-        },
-
-        0x40000081 => {
-            // Nested features
-            eax = 0;
-            ebx = 0;
-            ecx = 0;
-            edx = 0;
-        },
-
-        0x40000082 => {
-            // Nested features
+            // generic hypervisor features (0)
             eax = 0;
             ebx = 0;
             ecx = 0;
@@ -3853,27 +3699,25 @@ pub unsafe fn instr_0FAE_3_mem(addr: i32) {
 #[no_mangle]
 pub unsafe fn instr_0FAE_4_reg(_r: i32) { trigger_ud(); }
 #[no_mangle]
-pub unsafe fn instr_0FAE_4_mem(addr: i32) {
+pub unsafe fn instr_0FAE_4_mem(_addr: i32) {
     // xsave
-    fxsave(addr);
+    undefined_instruction();
 }
-#[no_mangle]
 pub unsafe fn instr_0FAE_5_reg(_r: i32) {
     // lfence
 }
-#[no_mangle]
-pub unsafe fn instr_0FAE_5_mem(addr: i32) {
+pub unsafe fn instr_0FAE_5_mem(_addr: i32) {
     // xrstor
-    fxrstor(addr);
+    undefined_instruction();
 }
 #[no_mangle]
 pub unsafe fn instr_0FAE_6_reg(_r: i32) {
     // mfence
 }
 #[no_mangle]
-pub unsafe fn instr_0FAE_6_mem(addr: i32) {
+pub unsafe fn instr_0FAE_6_mem(_addr: i32) {
     // xsaveopt
-    fxsave(addr);
+    undefined_instruction();
 }
 #[no_mangle]
 pub unsafe fn instr_0FAE_7_reg(_r: i32) {

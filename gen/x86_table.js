@@ -403,9 +403,9 @@ const encodings = [
     { opcode: 0x0F37, skip: 1, block_boundary: 1 }, // getsec
 
     // ssse3+
-    { opcode: 0x0F38, skip: 1, block_boundary: 1, custom: 1, no_next_instruction: 1, prefix: 1 },
-    { opcode: 0x0F39, skip: 1, block_boundary: 1, custom: 1, no_next_instruction: 1, prefix: 1 },
-    { opcode: 0x0F3A, skip: 1, block_boundary: 1, custom: 1, no_next_instruction: 1, prefix: 1 },
+    { opcode: 0x0F38, skip: 1, block_boundary: 1, custom: 1, no_next_instruction: 1 },
+    { opcode: 0x0F39, skip: 1, block_boundary: 1, custom: 1, no_next_instruction: 1 },
+    { opcode: 0x0F3A, skip: 1, block_boundary: 1, custom: 1, no_next_instruction: 1 },
     { opcode: 0x0F3B, skip: 1, block_boundary: 1 },
     { opcode: 0x0F3C, skip: 1, block_boundary: 1 },
     { opcode: 0x0F3D, skip: 1, block_boundary: 1 },

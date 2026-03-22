@@ -4453,8 +4453,7 @@ pub unsafe fn reset_cpu() {
     *cr.offset(4) = 0;
     *dreg.offset(6) = 0xFFFF0FF0u32 as i32;
     *dreg.offset(7) = 0x400;
-    *efer = 0;
-    *xcr0 = 1;
+    *cpl = 0;
 
     *is_32 = false;
     *stack_size_32 = false;

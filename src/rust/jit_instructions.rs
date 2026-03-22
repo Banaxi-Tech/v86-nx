@@ -7879,3 +7879,59 @@ pub fn instr_660FFE_mem_jit(ctx: &mut JitContext, modrm_byte: ModrmByte, r: u32)
 pub fn instr_660FFE_reg_jit(ctx: &mut JitContext, r1: u32, r2: u32) {
     sse_read128_xmm_xmm(ctx, "instr_660FFE", r1, r2);
 }
+
+#[no_mangle]
+pub fn instr_0F38_jit(ctx: &mut JitContext, _instr_flags: &mut u32) {
+    let op = ctx.cpu.read_imm8();
+    let modrm_byte = ctx.cpu.read_imm8();
+    let packed = op as u32 | ((modrm_byte as u32) << 8);
+    codegen::gen_move_registers_from_locals_to_memory(ctx);
+    if modrm_byte < 0xC0 {
+        let addr = crate::modrm::decode(ctx.cpu, modrm_byte);
+        codegen::gen_modrm_resolve(ctx, addr);
+        ctx.builder.const_i32(packed as i32);
+        ctx.builder.call_fn2("instr_0F38_mem_run");
+    } else {
+        ctx.builder.const_i32(packed as i32);
+        ctx.builder.call_fn1("instr_0F38_reg_run");
+    }
+    codegen::gen_move_registers_from_memory_to_locals(ctx);
+}
+
+#[no_mangle]
+pub fn instr_0F39_jit(ctx: &mut JitContext, _instr_flags: &mut u32) {
+    let op = ctx.cpu.read_imm8();
+    let modrm_byte = ctx.cpu.read_imm8();
+    let imm8 = ctx.cpu.read_imm8();
+    let packed = op as u32 | ((modrm_byte as u32) << 8) | ((imm8 as u32) << 16);
+    codegen::gen_move_registers_from_locals_to_memory(ctx);
+    if modrm_byte < 0xC0 {
+        let addr = crate::modrm::decode(ctx.cpu, modrm_byte);
+        codegen::gen_modrm_resolve(ctx, addr);
+        ctx.builder.const_i32(packed as i32);
+        ctx.builder.call_fn2("instr_0F39_mem_run");
+    } else {
+        ctx.builder.const_i32(packed as i32);
+        ctx.builder.call_fn1("instr_0F39_reg_run");
+    }
+    codegen::gen_move_registers_from_memory_to_locals(ctx);
+}
+
+#[no_mangle]
+pub fn instr_0F3A_jit(ctx: &mut JitContext, _instr_flags: &mut u32) {
+    let op = ctx.cpu.read_imm8();
+    let modrm_byte = ctx.cpu.read_imm8();
+    let imm8 = ctx.cpu.read_imm8();
+    let packed = op as u32 | ((modrm_byte as u32) << 8) | ((imm8 as u32) << 16);
+    codegen::gen_move_registers_from_locals_to_memory(ctx);
+    if modrm_byte < 0xC0 {
+        let addr = crate::modrm::decode(ctx.cpu, modrm_byte);
+        codegen::gen_modrm_resolve(ctx, addr);
+        ctx.builder.const_i32(packed as i32);
+        ctx.builder.call_fn2("instr_0F3A_mem_run");
+    } else {
+        ctx.builder.const_i32(packed as i32);
+        ctx.builder.call_fn1("instr_0F3A_reg_run");
+    }
+    codegen::gen_move_registers_from_memory_to_locals(ctx);
+}

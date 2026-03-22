@@ -235,6 +235,7 @@ pub const IA32_MISC_ENABLE: i32 = 0x1A0;
 pub const IA32_PAT: i32 = 0x277;
 pub const IA32_RTIT_CTL: i32 = 0x570;
 pub const MSR_PKG_C2_RESIDENCY: i32 = 0x60D;
+pub const IA32_EFER: i32 = 0xC0000080u32 as i32;
 pub const IA32_KERNEL_GS_BASE: i32 = 0xC0000101u32 as i32;
 pub const MSR_AMD64_LS_CFG: i32 = 0xC0011020u32 as i32;
 pub const MSR_AMD64_DE_CFG: i32 = 0xC0011029u32 as i32;
@@ -861,8 +862,6 @@ pub unsafe fn call_interrupt_vector(
                 dpl
             );
             dbg_trace();
-            dbg_assert!(descriptor.is_32(), "TODO: Check this (likely #GP)");
-            dbg_assert!(offset == 0, "TODO: Check this (likely #GP)");
             do_task_switch(selector, error_code);
             return;
         }
@@ -1980,10 +1979,6 @@ pub unsafe fn do_page_walk(
                 page_dir_entry as u64 & 0x7FFF_FFFF_0000_0000 == 0,
                 "Unsupported: Page directory entry larger than 32 bits"
             );
-            dbg_assert!(
-                page_dir_entry & 0x8000_0000_0000_0000u64 as i64 == 0,
-                "Unsupported: NX bit"
-            );
 
             (page_dir_addr, page_dir_entry as i32)
         }
@@ -2040,10 +2035,6 @@ pub unsafe fn do_page_walk(
                 dbg_assert!(
                     page_table_entry as u64 & 0x7FFF_FFFF_0000_0000 == 0,
                     "Unsupported: Page table entry larger than 32 bits"
-                );
-                dbg_assert!(
-                    page_table_entry & 0x8000_0000_0000_0000u64 as i64 == 0,
-                    "Unsupported: NX bit"
                 );
 
                 (page_table_addr, page_table_entry as i32)

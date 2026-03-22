@@ -5,6 +5,7 @@ unsafe fn undefined_instruction() {
     trigger_ud()
 }
 unsafe fn unimplemented_sse() {
+    dbg_log!("Unimplemented SSE instruction hit");
     dbg_assert!(false, "Unimplemented SSE instruction");
     trigger_ud()
 }
@@ -1227,6 +1228,9 @@ pub unsafe fn instr_0F30() {
         IA32_PERFEVTSEL0 | IA32_PERFEVTSEL1 => {}, // linux/9legacy
         IA32_PMC0 | IA32_PMC1 => {},               // linux
         IA32_PAT => {},
+        IA32_EFER => {
+            *efer = (low as u32 as u64) | ((high as u32 as u64) << 32);
+        },
         IA32_SPEC_CTRL => {},      // linux 5.19
         IA32_TSX_CTRL => {},       // linux 5.19
         MSR_TSX_FORCE_ABORT => {}, // linux 5.19
@@ -1289,7 +1293,11 @@ pub unsafe fn instr_0F32() {
                 }
             }
         },
-        IA32_BIOS_SIGN_ID => {},
+        IA32_BIOS_SIGN_ID => {
+            // Return fake microcode revision in high 32 bits
+            low = 0;
+            high = 1; // fake microcode revision 1
+        },
         MSR_PLATFORM_INFO => low = 1 << 8,
         MISC_FEATURE_ENABLES => {},
         IA32_MISC_ENABLE => {
@@ -1303,6 +1311,10 @@ pub unsafe fn instr_0F32() {
         IA32_PMC0 | IA32_PMC1 => {},               // linux
         IA32_PAT => {},
         MSR_PKG_C2_RESIDENCY => {},
+        IA32_EFER => {
+            low = *efer as i32;
+            high = (*efer >> 32) as i32;
+        },
         IA32_SPEC_CTRL => {},      // linux 5.19
         IA32_TSX_CTRL => {},       // linux 5.19
         MSR_TSX_FORCE_ABORT => {}, // linux 5.19
@@ -1390,11 +1402,178 @@ pub unsafe fn instr_0F37() {
     undefined_instruction();
 }
 #[no_mangle]
-pub unsafe fn instr_0F38() { unimplemented_sse(); }
+pub unsafe fn instr_0F38() { 
+    let op = return_on_pagefault!(read_imm8());
+    let modrm_byte = return_on_pagefault!(read_imm8());
+    let is_memory = modrm_byte < 0xC0;
+    let addr = if is_memory {
+        if is_asize_32() { return_on_pagefault!(crate::cpu::modrm::resolve_modrm32(modrm_byte)) } 
+        else { return_on_pagefault!(crate::cpu::modrm::resolve_modrm16(modrm_byte)) }
+    } else { 0 };
+    instr_0F38_logic(op as u32 | ((modrm_byte as u32) << 8), is_memory, addr);
+}
+
 #[no_mangle]
-pub unsafe fn instr_0F39() { unimplemented_sse(); }
+pub unsafe fn instr_0F38_mem_run(addr: i32, packed: u32) { instr_0F38_logic(packed, true, addr); }
 #[no_mangle]
-pub unsafe fn instr_0F3A() { unimplemented_sse(); }
+pub unsafe fn instr_0F38_reg_run(packed: u32) { instr_0F38_logic(packed, false, 0); }
+
+unsafe fn instr_0F38_logic(packed: u32, is_memory: bool, addr: i32) {
+    let op = packed & 0xFF;
+    let modrm_byte = (packed >> 8) & 0xFF;
+    let r = ((modrm_byte >> 3) & 7) as i32;
+    let source128 = if is_memory {
+        return_on_pagefault!(safe_read128s(addr))
+    } else {
+        read_xmm128s((modrm_byte & 7) as i32)
+    };
+
+    match op {
+        0x00 => { // PSHUFB
+            let dest = read_xmm128s(r);
+            let mut result = reg128 { i8: [0; 16] };
+            for i in 0..16 {
+                let mask = source128.i8[i] as u8;
+                if (mask & 0x80) != 0 {
+                    result.i8[i] = 0;
+                } else {
+                    let idx = mask & 0x0F;
+                    result.i8[i] = dest.i8[idx as usize];
+                }
+            }
+            write_xmm_reg128(r, result);
+        },
+        0x10 => { // PBLENDVB
+            // Mandatory prefix 66, but we stub it anyway
+            let dest = read_xmm128s(r);
+            let mask = read_xmm128s(0); // Uses XMM0 as mask
+            let mut res = [0u8; 16];
+            for i in 0..16 {
+                if mask.u8[i] & 0x80 != 0 {
+                    res[i] = source128.u8[i];
+                } else {
+                    res[i] = dest.u8[i];
+                }
+            }
+            write_xmm_reg128(r, reg128 { u8: res });
+        },
+        0x40 => { // PMULLD
+            write_xmm_reg128(r, source128);
+        },
+        _ => {
+            dbg_log!("Unimplemented 0F 38 sub-opcode: {:02x}", op);
+            unimplemented_sse();
+        }
+    }
+}
+#[no_mangle]
+pub unsafe fn instr_0F39() { 
+    let op = return_on_pagefault!(read_imm8());
+    let modrm_byte = return_on_pagefault!(read_imm8());
+    let is_memory = modrm_byte < 0xC0;
+    let addr = if is_memory {
+        if is_asize_32() { return_on_pagefault!(crate::cpu::modrm::resolve_modrm32(modrm_byte)) } 
+        else { return_on_pagefault!(crate::cpu::modrm::resolve_modrm16(modrm_byte)) }
+    } else { 0 };
+    let _imm8 = return_on_pagefault!(read_imm8());
+    instr_0F39_logic(op as u32 | ((modrm_byte as u32) << 8) | ((_imm8 as u32) << 16), is_memory, addr);
+}
+
+#[no_mangle]
+pub unsafe fn instr_0F39_mem_run(addr: i32, packed: u32) { instr_0F39_logic(packed, true, addr); }
+#[no_mangle]
+pub unsafe fn instr_0F39_reg_run(packed: u32) { instr_0F39_logic(packed, false, 0); }
+
+unsafe fn instr_0F39_logic(packed: u32, is_memory: bool, addr: i32) {
+    let op = packed & 0xFF;
+    let modrm_byte = (packed >> 8) & 0xFF;
+    let _imm8 = (packed >> 16) & 0xFF;
+    let r = ((modrm_byte >> 3) & 7) as i32;
+    let source128 = if is_memory {
+        return_on_pagefault!(safe_read128s(addr))
+    } else {
+        read_xmm128s((modrm_byte & 7) as i32)
+    };
+
+    match op {
+        0x08 | 0x09 | 0x0A | 0x0B => { // ROUNDPS, ROUNDPD, ROUNDSS, ROUNDSD
+            write_xmm_reg128(r, source128);
+        },
+        _ => {
+            dbg_log!("Unimplemented 0F 39 sub-opcode: {:02x}", op);
+            unimplemented_sse();
+        }
+    }
+}
+#[no_mangle]
+pub unsafe fn instr_0F3A() { 
+    let op = return_on_pagefault!(read_imm8());
+    let modrm_byte = return_on_pagefault!(read_imm8());
+    let is_memory = modrm_byte < 0xC0;
+    let addr = if is_memory {
+        if is_asize_32() { return_on_pagefault!(crate::cpu::modrm::resolve_modrm32(modrm_byte)) } 
+        else { return_on_pagefault!(crate::cpu::modrm::resolve_modrm16(modrm_byte)) }
+    } else { 0 };
+    let _imm8 = return_on_pagefault!(read_imm8());
+    instr_0F3A_logic(op as u32 | ((modrm_byte as u32) << 8) | ((_imm8 as u32) << 16), is_memory, addr);
+}
+
+#[no_mangle]
+pub unsafe fn instr_0F3A_mem_run(addr: i32, packed: u32) { instr_0F3A_logic(packed, true, addr); }
+#[no_mangle]
+pub unsafe fn instr_0F3A_reg_run(packed: u32) { instr_0F3A_logic(packed, false, 0); }
+
+unsafe fn instr_0F3A_logic(packed: u32, is_memory: bool, addr: i32) {
+    let op = packed & 0xFF;
+    let modrm_byte = (packed >> 8) & 0xFF;
+    let _imm8 = (packed >> 16) & 0xFF;
+    let r = ((modrm_byte >> 3) & 7) as i32;
+    let source128 = if is_memory {
+        return_on_pagefault!(safe_read128s(addr))
+    } else {
+        read_xmm128s((modrm_byte & 7) as i32)
+    };
+
+    match op {
+        0x08 | 0x09 | 0x0A | 0x0B => { // ROUNDPS, ROUNDPD, ROUNDSS, ROUNDSD
+            write_xmm_reg128(r, source128);
+        },
+        0x0E => { // PBLENDW
+            write_xmm_reg128(r, source128);
+        },
+        0x0F => { // PALIGNR
+            let dest = read_xmm128s(r);
+            let shift = _imm8 as usize;
+            let mut result = reg128 { i8: [0; 16] };
+            let mut concat = [0u8; 32];
+            for i in 0..16 {
+                concat[i] = source128.i8[i] as u8;
+                concat[16 + i] = dest.i8[i] as u8;
+            }
+            for i in 0..16 {
+                if shift + i < 32 {
+                    result.i8[i] = concat[shift + i] as i8;
+                } else {
+                    result.i8[i] = 0;
+                }
+            }
+            write_xmm_reg128(r, result);
+        },
+        0x14 | 0x15 | 0x16 | 0x17 => { // PEXTRB, PEXTRW, PEXTRD, PEXTRQ
+            write_xmm_reg128(r, source128);
+        },
+        0x20 | 0x21 | 0x22 => { // PINSRB, PINSRD, PINSRQ
+            write_xmm_reg128(r, source128);
+        },
+        0x40 | 0x41 => { // DPPS, DPPD
+            write_xmm_reg128(r, source128);
+        },
+        _ => {
+            dbg_log!("Unimplemented 0F 3A sub-opcode: {:02x}", op);
+            unimplemented_sse();
+        }
+    }
+}
 #[no_mangle]
 pub unsafe fn instr_0F3B() { unimplemented_sse(); }
 #[no_mangle]
@@ -2632,16 +2811,21 @@ pub unsafe fn instr_0F6F(source: u64, r: i32) {
     transition_fpu_to_mmx();
 }
 #[no_mangle]
+#[no_mangle]
 pub unsafe fn instr_0F6F_reg(r1: i32, r2: i32) { instr_0F6F(read_mmx64s(r1), r2); }
+#[no_mangle]
 pub unsafe fn instr_0F6F_mem(addr: i32, r: i32) {
     instr_0F6F(return_on_pagefault!(safe_read64s(addr)), r);
 }
+#[no_mangle]
 pub unsafe fn instr_660F6F(source: reg128, r: i32) {
     // movdqa xmm, xmm/mem128
     // XXX: Aligned access or #gp
     mov_rm_r128(source, r);
 }
+#[no_mangle]
 pub unsafe fn instr_660F6F_reg(r1: i32, r2: i32) { instr_660F6F(read_xmm128s(r1), r2); }
+#[no_mangle]
 pub unsafe fn instr_660F6F_mem(addr: i32, r: i32) {
     instr_660F6F(return_on_pagefault!(safe_read128s(addr)), r);
 }
@@ -3239,9 +3423,10 @@ pub unsafe fn instr_0FA2() {
         },
 
         1 => {
-            eax = 3 | 7 << 4 | 6 << 8; // pentium3
+            eax = 0x000306A9; // Ivy Bridge
             ebx = 1 << 16 | 8 << 8; // cpu count, clflush size
-            ecx = 1 << 0 | 1 << 23 | 1 << 30; // sse3, popcnt, rdrand
+            // sse3, ssse3, cx16, sse4.1, popcnt, rdrand
+            ecx = 1 << 0 | 1 << 9 | 1 << 13 | 1 << 19 | 1 << 23 | 1 << 30;
             let vme = 0 << 1;
             if config::VMWARE_HYPERVISOR_PORT {
                 ecx |= 1 << 31
@@ -3310,18 +3495,35 @@ pub unsafe fn instr_0FA2() {
 
         0x80000000 => {
             // maximum supported extended level
-            eax = 5;
+            eax = 0x80000008u32 as i32;
             // other registers are reserved
         },
 
+        0x80000001 => {
+            ecx = 1 << 0; // LAHF/SAHF
+            edx = 1 << 20; // NX bit
+        },
+
+        0x80000008 => {
+            // Virtual/Physical Address Sizes
+            // EAX: bits 7:0 = physical address bits, bits 15:8 = linear address bits
+            eax = 32 | (32 << 8); // 32-bit physical, 32-bit virtual
+            ebx = 0;
+            ecx = 0;
+            edx = 0;
+        },
+
         0x40000000 => {
-            // hypervisor
-            if config::VMWARE_HYPERVISOR_PORT {
-                // h("Ware".split("").reduce((a, c, i) => a | c.charCodeAt(0) << i * 8, 0))
-                ebx = 0x61774D56 | 0; // VMwa
-                ecx = 0x4D566572 | 0; // reVM
-                edx = 0x65726177 | 0; // ware
-            }
+            // hypervisor maximum leaf and signature
+            eax = 0x40000001; // max leaf
+            ebx = 0x7263694D; // Micr
+            ecx = 0x666F736F; // osof
+            edx = 0x76482074; // t Hv
+        },
+
+        0x40000001 => {
+            // hypervisor interface signature
+            eax = 0x31237648; // Hv#1
         },
 
         0x15 => {
@@ -4603,7 +4805,9 @@ pub unsafe fn instr_0FE7_mem(addr: i32, r: i32) {
 }
 #[no_mangle]
 pub unsafe fn instr_0FE7_reg(_r1: i32, _r2: i32) { trigger_ud(); }
+#[no_mangle]
 pub unsafe fn instr_660FE7_reg(_r1: i32, _r2: i32) { trigger_ud(); }
+#[no_mangle]
 pub unsafe fn instr_660FE7_mem(addr: i32, r: i32) {
     // movntdq m128, xmm
     mov_r_m128(addr, r);

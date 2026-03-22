@@ -403,9 +403,9 @@ const encodings = [
     { opcode: 0x0F37, skip: 1, block_boundary: 1 }, // getsec
 
     // ssse3+
-    { opcode: 0x0F38, skip: 1, block_boundary: 1 },
-    { opcode: 0x0F39, skip: 1, block_boundary: 1 },
-    { opcode: 0x0F3A, skip: 1, block_boundary: 1 },
+    { opcode: 0x0F38, skip: 1, block_boundary: 1, custom: 1, no_next_instruction: 1, prefix: 1 },
+    { opcode: 0x0F39, skip: 1, block_boundary: 1, custom: 1, no_next_instruction: 1, prefix: 1 },
+    { opcode: 0x0F3A, skip: 1, block_boundary: 1, custom: 1, no_next_instruction: 1, prefix: 1 },
     { opcode: 0x0F3B, skip: 1, block_boundary: 1 },
     { opcode: 0x0F3C, skip: 1, block_boundary: 1 },
     { opcode: 0x0F3D, skip: 1, block_boundary: 1 },
@@ -511,7 +511,7 @@ const encodings = [
     { sse: 1, opcode: 0x660F15, e: 1, custom: 1 },
     { sse: 1, opcode: 0x0F16, e: 1, custom: 1 },
     { sse: 1, opcode: 0x660F16, reg_ud: 1, e: 1, custom: 1 },
-    { sse: 1, opcode: 0xF30F16,  e: 1, custom: 1 }, // sse3
+    { sse: 1, opcode: 0xF30F16, e: 1, custom: 1 }, // sse3
     { sse: 1, opcode: 0x0F17, reg_ud: 1, e: 1, custom: 1 },
     { sse: 1, opcode: 0x660F17, reg_ud: 1, e: 1, custom: 1 },
 
@@ -818,8 +818,7 @@ const encodings = [
     { opcode: 0x0FFF, block_boundary: 1 }, // ud
 ];
 
-for(let i = 0; i < 8; i++)
-{
+for (let i = 0; i < 8; i++) {
     encodings.push.apply(encodings, [
         { opcode: 0x00 | i << 3, custom: 1, e: 1 },
         { opcode: 0x01 | i << 3, custom: 1, os: 1, e: 1 },

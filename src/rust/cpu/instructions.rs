@@ -1423,7 +1423,13 @@ pub unsafe fn instr32_CB() {
 pub unsafe fn instr_CC() {
     // INT3
     // TODO: inhibit iopl checks
-    dbg_log!("INT3");
+    dbg_log!("INT3 at eip={:08x}", get_real_eip());
+    dbg_log!("  EAX={:08x} EBX={:08x} ECX={:08x} EDX={:08x}",
+        read_reg32(EAX) as u32, read_reg32(EBX) as u32,
+        read_reg32(ECX) as u32, read_reg32(EDX) as u32);
+    dbg_log!("  ESP={:08x} EBP={:08x} ESI={:08x} EDI={:08x}",
+        read_reg32(ESP) as u32, read_reg32(EBP) as u32,
+        read_reg32(ESI) as u32, read_reg32(EDI) as u32);
     call_interrupt_vector(3, true, None);
 }
 #[no_mangle]

@@ -199,6 +199,8 @@ export function CPU(bus, wm, stop_idling)
     this.fpu_dp_selector = view(Int32Array, memory, 1060, 1);
     this.fpu_dp_selector[0] = 0;
 
+    this.efer = view(Uint32Array, memory, 1232, 2);
+
     this.reg_xmm32s = view(Int32Array, memory, 832, 8 * 4);
 
     this.mxcsr = view(Int32Array, memory, 824, 1);
@@ -570,6 +572,8 @@ CPU.prototype.get_state = function()
     state[86] = this.last_result;
     state[87] = this.fpu_status_word;
     state[88] = this.mxcsr;
+    state[89] = this.efer[0];
+    state[90] = this.efer[1];
 
     return state;
 };
@@ -760,6 +764,8 @@ CPU.prototype.set_state = function(state)
     if(state[86] !== undefined) this.last_result = state[86];
     if(state[87] !== undefined) this.fpu_status_word = state[87];
     if(state[88] !== undefined) this.mxcsr = state[88];
+    if(state[89] !== undefined) this.efer[0] = state[89];
+    if(state[90] !== undefined) this.efer[1] = state[90];
 
     const bitmap = new Bitmap(state[78].buffer);
     const packed_memory = state[77];

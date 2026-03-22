@@ -1248,9 +1248,11 @@ pub unsafe fn instr_0F30() {
         IA32_MCU_OPT_CTRL => {},   // linux 5.19
         MSR_AMD64_LS_CFG => {},    // linux 5.19
         MSR_AMD64_DE_CFG => {},    // linux 6.1
+        0x40000000..=0x400000FF => {
+            // Hyper-V MSRs
+        },
         _ => {
-            dbg_log!("Unknown msr: {:x}", index);
-            dbg_assert!(false);
+            dbg_log!("Unknown msr write: {:x} data={:x}:{:x}", index, high, low);
         },
     }
 }
@@ -1332,9 +1334,11 @@ pub unsafe fn instr_0F32() {
         IA32_MCU_OPT_CTRL => {},   // linux 5.19
         MSR_AMD64_LS_CFG => {},    // linux 5.19
         MSR_AMD64_DE_CFG => {},    // linux 6.1
+        0x40000000..=0x400000FF => {
+            // Hyper-V MSRs
+        },
         _ => {
-            dbg_log!("Unknown msr: {:x}", index);
-            dbg_assert!(false);
+            dbg_log!("Unknown msr read: {:x}", index);
         },
     }
 
@@ -3565,6 +3569,30 @@ pub unsafe fn instr_0FA2() {
         0x40000004 => {
             // Recommendations
             eax = 0x00000002; // Hypercall recomendation
+            ebx = 0;
+            ecx = 0;
+            edx = 0;
+        },
+
+        0x40000080 => {
+            // Nested features
+            eax = 0x40000082; // Max nested leaf
+            ebx = 0;
+            ecx = 0;
+            edx = 0;
+        },
+
+        0x40000081 => {
+            // Nested features
+            eax = 0;
+            ebx = 0;
+            ecx = 0;
+            edx = 0;
+        },
+
+        0x40000082 => {
+            // Nested features
+            eax = 0;
             ebx = 0;
             ecx = 0;
             edx = 0;

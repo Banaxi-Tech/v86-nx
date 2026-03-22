@@ -1334,6 +1334,14 @@ pub unsafe fn instr_0F32() {
         IA32_MCU_OPT_CTRL => {},   // linux 5.19
         MSR_AMD64_LS_CFG => {},    // linux 5.19
         MSR_AMD64_DE_CFG => {},    // linux 6.1
+        0x40000020 => {
+            // HV_X64_MSR_TIME_REF_COUNT
+            let tsc = read_tsc();
+            // HV timer is in 100ns units. TSC is usually much faster.
+            // For now, let's just use a scaled TSC or return something that advances.
+            low = (tsc / 100) as i32;
+            high = (tsc / 100 >> 32) as i32;
+        },
         0x40000000..=0x400000FF => {
             // Hyper-V MSRs
         },

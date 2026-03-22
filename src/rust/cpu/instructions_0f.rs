@@ -310,9 +310,20 @@ pub unsafe fn instr16_0F01_6_mem(addr: i32) {
 pub unsafe fn instr32_0F01_6_mem(addr: i32) { instr16_0F01_6_mem(addr) }
 
 #[no_mangle]
-pub unsafe fn instr16_0F01_7_reg(_r: i32) { trigger_ud(); }
+pub unsafe fn instr16_0F01_7_reg(_r: i32) {
+    // rdtscp
+    if 0 == *cpl || 0 == *cr.offset(4) & CR4_TSD {
+        let tsc = read_tsc();
+        write_reg32(EAX, tsc as i32);
+        write_reg32(EDX, (tsc >> 32) as i32);
+        write_reg32(ECX, 0); // TSC_AUX
+    }
+    else {
+        trigger_gp(0);
+    };
+}
 #[no_mangle]
-pub unsafe fn instr32_0F01_7_reg(_r: i32) { trigger_ud(); }
+pub unsafe fn instr32_0F01_7_reg(r: i32) { instr16_0F01_7_reg(r); }
 
 #[no_mangle]
 pub unsafe fn instr16_0F01_7_mem(addr: i32) {
@@ -3425,8 +3436,8 @@ pub unsafe fn instr_0FA2() {
         1 => {
             eax = 0x000306A9; // Ivy Bridge
             ebx = 1 << 16 | 8 << 8; // cpu count, clflush size
-            // sse3, ssse3, cx16, sse4.1, popcnt, rdrand
-            ecx = 1 << 0 | 1 << 9 | 1 << 13 | 1 << 19 | 1 << 23 | 1 << 30;
+            // sse3, ssse3, cx16, sse4.1, sse4.2, popcnt, rdrand
+            ecx = 1 << 0 | 1 << 9 | 1 << 13 | 1 << 19 | 1 << 20 | 1 << 23 | 1 << 30;
             let vme = 0 << 1;
             if config::VMWARE_HYPERVISOR_PORT {
                 ecx |= 1 << 31
@@ -3487,10 +3498,19 @@ pub unsafe fn instr_0FA2() {
         7 => {
             if read_reg32(ECX) == 0 {
                 eax = 0; // maximum supported sub-level
-                ebx = 1 << 9; // enhanced REP MOVSB/STOSB
+                // ebx: smep (7), enhanced rep (9), smap (20)
+                ebx = 1 << 7 | 1 << 9 | 1 << 20;
                 ecx = 0;
                 edx = 0;
             }
+        },
+
+        6 => {
+            // Thermal and Power Management
+            eax = 0x77; // ARAT, etc
+            ebx = 0x2;
+            ecx = 0x9;
+            edx = 0;
         },
 
         0x80000000 => {
@@ -3500,7 +3520,7 @@ pub unsafe fn instr_0FA2() {
         },
 
         0x80000001 => {
-            ecx = 1 << 0; // LAHF/SAHF
+            ecx = 1 << 0 | 1 << 8; // LAHF/SAHF, PREFETCHW
             edx = 1 << 20; // NX bit
         },
 
@@ -3515,7 +3535,7 @@ pub unsafe fn instr_0FA2() {
 
         0x40000000 => {
             // hypervisor maximum leaf and signature
-            eax = 0x40000001; // max leaf
+            eax = 0x40000004; // max leaf
             ebx = 0x7263694D; // Micr
             ecx = 0x666F736F; // osof
             edx = 0x76482074; // t Hv
@@ -3524,6 +3544,30 @@ pub unsafe fn instr_0FA2() {
         0x40000001 => {
             // hypervisor interface signature
             eax = 0x31237648; // Hv#1
+        },
+
+        0x40000002 => {
+            // System identity
+            eax = 0x00003839; // Build number
+            ebx = 0x000A0000; // Version
+            ecx = 0;
+            edx = 0;
+        },
+
+        0x40000003 => {
+            // Hyper-V Features
+            eax = 0x000000F2; // Basic enlightened features
+            ebx = 0;
+            ecx = 0;
+            edx = 0;
+        },
+
+        0x40000004 => {
+            // Recommendations
+            eax = 0x00000002; // Hypercall recomendation
+            ebx = 0;
+            ecx = 0;
+            edx = 0;
         },
 
         0x15 => {
